@@ -50,10 +50,20 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private(set) var isRunning = false
 
+    /// Below this, a window is almost certainly a background/utility panel
+    /// rather than something worth offering as a capture target.
+    private static let minimumWindowDimension: CGFloat = 150
+
     static func availableTargets() async throws -> AvailableTargets {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        // Only offer apps that actually have an on-screen window worth recording.
-        let appsWithWindows = Set(content.windows.compactMap { $0.owningApplication?.processID })
+        // onScreenWindowsOnly: false — true fullscreen apps run in their own
+        // dedicated Space, and with `true` here ScreenCaptureKit silently
+        // omits their window even though it's clearly visible/capturable.
+        // We filter for "worth recording" by size instead.
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        let substantialWindows = content.windows.filter {
+            $0.frame.width >= minimumWindowDimension && $0.frame.height >= minimumWindowDimension
+        }
+        let appsWithWindows = Set(substantialWindows.compactMap { $0.owningApplication?.processID })
         let apps = content.applications.filter { appsWithWindows.contains($0.processID) }
         return AvailableTargets(apps: apps, displays: content.displays)
     }
@@ -61,9 +71,14 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     /// Prefers an on-screen window, but falls back to the largest window owned
     /// by the process at all if none are currently flagged on-screen — SCWindow's
     /// isOnScreen has been observed to lag by a beat right after an app launches
-    /// or regains focus, and a stale flag shouldn't be a hard failure.
+    /// or regains focus (and is unreliable for fullscreen windows in their own
+    /// Space), so a stale/false flag shouldn't be a hard failure.
     private static func mainWindow(for app: SCRunningApplication, in content: SCShareableContent) -> SCWindow? {
-        let owned = content.windows.filter { $0.owningApplication?.processID == app.processID }
+        let owned = content.windows.filter {
+            $0.owningApplication?.processID == app.processID
+            && $0.frame.width >= minimumWindowDimension
+            && $0.frame.height >= minimumWindowDimension
+        }
         let onScreen = owned.filter(\.isOnScreen)
         let pool = onScreen.isEmpty ? owned : onScreen
         return pool.max { ($0.frame.width * $0.frame.height) < ($1.frame.width * $1.frame.height) }
@@ -72,7 +87,9 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     func start(target: CaptureTarget) async throws {
         await stop()
 
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        // See availableTargets() — onScreenWindowsOnly: false so fullscreen
+        // app windows (their own Space) still resolve correctly.
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         let filter: SCContentFilter
         let pixelWidth: Int
         let pixelHeight: Int
