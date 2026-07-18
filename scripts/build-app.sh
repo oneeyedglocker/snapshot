@@ -20,8 +20,19 @@ mkdir -p "$APP_DIR/Contents/MacOS"
 cp ".build/release/Snapshot" "$APP_DIR/Contents/MacOS/Snapshot"
 cp "Packaging/Info.plist" "$APP_DIR/Contents/Info.plist"
 
-echo "Signing (ad-hoc)..."
-codesign --force --deep --sign - "$APP_DIR"
+# Ad-hoc signing (the default, "-") gives every rebuild a different signing
+# identity, so macOS/TCC treats each build as a new, unrecognized app and
+# re-prompts for Screen Recording/Accessibility every time. Set
+# SNAPSHOT_SIGN_IDENTITY to a certificate's name (e.g. one you made via
+# Keychain Access > Certificate Assistant > Create a Certificate, type "Code
+# Signing") to get a stable identity whose permission grants survive rebuilds.
+SIGN_IDENTITY="${SNAPSHOT_SIGN_IDENTITY:--}"
+echo "Signing (identity: $SIGN_IDENTITY)..."
+codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_DIR"
+if [ "$SIGN_IDENTITY" = "-" ]; then
+    echo "Note: ad-hoc signature — expect repeat permission prompts on future"
+    echo "rebuilds. See README 'Permissions' section to make this stable."
+fi
 
 echo "Built $APP_DIR"
 echo "Run it with: open $APP_DIR"

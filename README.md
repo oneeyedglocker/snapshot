@@ -46,6 +46,32 @@ You'll be prompted for two permissions:
    app (the game) has focus. System Settings → Privacy & Security →
    Accessibility → enable Snapshot.
 
+### Making permissions stick across rebuilds
+
+By default `build-app.sh` signs ad-hoc (`codesign --sign -`), which gives
+every rebuild a *different* signing identity — macOS/TCC then treats each
+build as an unrecognized app and re-prompts for both permissions every time,
+even though an old build still shows as "granted" in System Settings (it's
+a stale entry for a signature that no longer exists on disk).
+
+One-time fix:
+
+1. Keychain Access → **Certificate Assistant → Create a Certificate...** →
+   name it anything (e.g. `Snapshot Local Dev`), Identity Type **Self Signed
+   Root**, Certificate Type **Code Signing** → Create.
+2. Clear out any stale grants from earlier ad-hoc builds:
+   ```sh
+   tccutil reset ScreenCapture com.oneeyedglocker.snapshot
+   tccutil reset Accessibility com.oneeyedglocker.snapshot
+   ```
+3. Build with that identity from now on:
+   ```sh
+   SNAPSHOT_SIGN_IDENTITY="Snapshot Local Dev" ./scripts/build-app.sh
+   open build/Snapshot.app
+   ```
+   Grant both permissions once when prompted. Future rebuilds signed with the
+   same identity should keep the grant.
+
 ## Using it
 
 Click the menu bar icon (● record icon):
@@ -79,7 +105,7 @@ Everything's in `Sources/Snapshot/Settings.swift`:
 - App-bound capture targets the window that's largest/on-screen for that
   process at start time; if WoW is minimized or not yet launched when you
   hit "Start Recording", pick it again from the menu once it's up.
-- Ad-hoc code signing (`codesign --sign -`) is fine for personal use but its
-  identity can shift between rebuilds, occasionally forcing you to
-  re-approve permissions. If that gets annoying, create a free self-signed
-  certificate in Keychain Access and sign with that instead.
+- Ad-hoc code signing (`codesign --sign -`) is fine for a one-off run but its
+  identity shifts on every rebuild, forcing repeat permission prompts (and
+  leaving stale "granted" entries in System Settings for old builds). See
+  "Making permissions stick across rebuilds" above.
