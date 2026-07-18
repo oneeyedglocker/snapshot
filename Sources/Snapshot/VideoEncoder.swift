@@ -55,11 +55,11 @@ final class VideoEncoder {
 
         VTCompressionSessionEncodeFrameWithOutputHandler(
             session,
-            imageBuffer: imageBuffer,
-            presentationTimeStamp: pts,
-            duration: .invalid,
-            frameProperties: nil,
-            infoFlagsOut: nil
+            imageBuffer,
+            pts,
+            .invalid,
+            nil,
+            nil
         ) { [onEncodedFrame] status, _, encodedBuffer in
             guard status == noErr, let encodedBuffer, CMSampleBufferDataIsReady(encodedBuffer) else { return }
             let isKeyframe = Self.isSyncSample(encodedBuffer)

@@ -133,6 +133,8 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         case .audio:
             let sample = TimedSample(sampleBuffer: sampleBuffer, isKeyframe: true)
             Task { [audioBuffer] in await audioBuffer.append(sample) }
+        case .microphone:
+            break // we don't request microphone capture (see SCStreamConfiguration.capturesMicrophone, unused)
         @unknown default:
             break
         }
