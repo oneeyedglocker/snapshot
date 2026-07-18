@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import CoreGraphics
 import ScreenCaptureKit
 
@@ -6,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let captureEngine = CaptureEngine()
     private lazy var statusBar = StatusBarController()
     private lazy var hotkeyManager = HotkeyManager { [weak self] in self?.saveClip() }
+    private let overlay = OverlayHUD()
 
     private var currentTarget: CaptureTarget?
 
@@ -16,6 +18,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showPermissionAlert()
             return
         }
+
+        // Unlike Screen Recording, macOS won't prompt for Accessibility on
+        // its own just because NSEvent.addGlobalMonitorForEvents is called —
+        // it silently never fires until the app is trusted. Ask explicitly
+        // so the hotkey has a chance of working without the user having to
+        // discover the Accessibility pane themselves.
+        let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+        _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
 
         captureEngine.onStreamStopped = { [weak self] error in
             DispatchQueue.main.async {
@@ -133,8 +143,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     case .success(let savedURL):
                         print("Snapshot: saved clip to \(savedURL.path)")
                         self?.statusBar.flashSaved()
+                        self?.overlay.show(text: "Clip saved", systemSymbolName: "checkmark.circle.fill", tintColor: .systemGreen)
                     case .failure(let error):
                         print("Snapshot: export failed: \(error)")
+                        self?.overlay.show(text: "Save failed", systemSymbolName: "xmark.circle.fill", tintColor: .systemRed)
                     }
                 }
             }

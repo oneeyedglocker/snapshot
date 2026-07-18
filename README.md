@@ -15,7 +15,9 @@ scenes, no config sprawl — an instant-replay button.
 - Audio (system audio only, no mic) is buffered as raw PCM and AAC-encoded
   at save time.
 - Default hotkey **⌘⇧R** saves the last 30 seconds to
-  `~/Movies/Snapshot Clips/`.
+  `~/Movies/Snapshot Clips/`. A brief on-screen toast (top-right corner,
+  click-through, visible over fullscreen/windowed games) confirms the save
+  succeeded — the menu bar icon flash alone is easy to miss mid-game.
 
 ## Build & run
 
@@ -43,8 +45,10 @@ You'll be prompted for two permissions:
 1. **Screen Recording** — required to capture anything. System Settings →
    Privacy & Security → Screen Recording → enable Snapshot, then relaunch.
 2. **Accessibility** — required for the global hotkey to fire while another
-   app (the game) has focus. System Settings → Privacy & Security →
-   Accessibility → enable Snapshot.
+   app (the game) has focus. Snapshot proactively triggers this prompt at
+   launch (via `AXIsProcessTrustedWithOptions`); if you miss it or it never
+   appeared, go to System Settings → Privacy & Security → Accessibility →
+   enable Snapshot yourself, then relaunch the app.
 
 ### Making permissions stick across rebuilds
 
