@@ -53,13 +53,13 @@ final class VideoEncoder {
         guard let session, let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let pts = sampleBuffer.presentationTimeStamp
 
-        VTCompressionSessionEncodeFrameWithOutputHandler(
+        VTCompressionSessionEncodeFrame(
             session,
-            imageBuffer,
-            pts,
-            .invalid,
-            nil,
-            nil
+            imageBuffer: imageBuffer,
+            presentationTimeStamp: pts,
+            duration: .invalid,
+            frameProperties: nil,
+            infoFlagsOut: nil
         ) { [onEncodedFrame] status, _, encodedBuffer in
             guard status == noErr, let encodedBuffer, CMSampleBufferDataIsReady(encodedBuffer) else { return }
             let isKeyframe = Self.isSyncSample(encodedBuffer)
