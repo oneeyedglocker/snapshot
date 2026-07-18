@@ -21,9 +21,16 @@ struct AvailableTargets {
     let displays: [SCDisplay]
 }
 
-enum CaptureError: Error {
-    case noWindowForApp
+enum CaptureError: Error, CustomStringConvertible {
+    case noWindowForApp(String)
     case noContentAvailable
+
+    var description: String {
+        switch self {
+        case .noWindowForApp(let detail): return detail
+        case .noContentAvailable: return "No capturable content available."
+        }
+    }
 }
 
 /// Owns the ScreenCaptureKit stream and fans raw sample buffers out to the
@@ -51,10 +58,15 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         return AvailableTargets(apps: apps, displays: content.displays)
     }
 
+    /// Prefers an on-screen window, but falls back to the largest window owned
+    /// by the process at all if none are currently flagged on-screen — SCWindow's
+    /// isOnScreen has been observed to lag by a beat right after an app launches
+    /// or regains focus, and a stale flag shouldn't be a hard failure.
     private static func mainWindow(for app: SCRunningApplication, in content: SCShareableContent) -> SCWindow? {
-        content.windows
-            .filter { $0.owningApplication?.processID == app.processID && $0.isOnScreen }
-            .max { ($0.frame.width * $0.frame.height) < ($1.frame.width * $1.frame.height) }
+        let owned = content.windows.filter { $0.owningApplication?.processID == app.processID }
+        let onScreen = owned.filter(\.isOnScreen)
+        let pool = onScreen.isEmpty ? owned : onScreen
+        return pool.max { ($0.frame.width * $0.frame.height) < ($1.frame.width * $1.frame.height) }
     }
 
     func start(target: CaptureTarget) async throws {
@@ -69,7 +81,12 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         switch target {
         case .app(let app):
             guard let window = Self.mainWindow(for: app, in: content) else {
-                throw CaptureError.noWindowForApp
+                let owners = Set(content.windows.compactMap { $0.owningApplication?.applicationName }).sorted()
+                throw CaptureError.noWindowForApp(
+                    "No window found for \"\(app.applicationName)\" (pid \(app.processID), bundle \(app.bundleIdentifier)). "
+                    + "ScreenCaptureKit currently reports \(content.windows.count) window(s) total, owned by: "
+                    + (owners.isEmpty ? "(none)" : owners.joined(separator: ", ")) + "."
+                )
             }
             filter = SCContentFilter(desktopIndependentWindow: window)
             pixelWidth = Int((window.frame.width * scale).rounded())
