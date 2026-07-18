@@ -20,6 +20,7 @@ final class HotkeyManager {
 
     func updateBinding(id: String, combo: KeyCombo) {
         registrations[id]?.combo = combo
+        print("Snapshot: HotkeyManager registrations now: \(registrations.map { "\($0.key)=\($0.value.combo.displayString)" }.sorted())")
     }
 
     func start() {
@@ -42,7 +43,10 @@ final class HotkeyManager {
 
     private func handle(_ event: NSEvent) {
         let combo = KeyCombo(keyCode: event.keyCode, modifiers: event.modifierFlags.intersection(.deviceIndependentFlagsMask))
-        for registration in registrations.values where registration.combo == combo {
+        let matches = registrations.filter { $0.value.combo == combo }
+        guard !matches.isEmpty else { return }
+        print("Snapshot: hotkey \(combo.displayString) matched registrations: \(matches.keys.sorted())")
+        for registration in matches.values {
             registration.action()
         }
     }
