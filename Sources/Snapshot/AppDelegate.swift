@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.onToggleRecording = { [weak self] in self?.toggleRecording() }
         statusBar.onSaveNow = { [weak self] in self?.saveClip() }
         statusBar.onRefreshTargets = { [weak self] in self?.refreshTargets(autoStart: false) }
+        statusBar.onSelectClipLength = { [weak self] seconds in self?.setClipLength(seconds) }
         statusBar.onQuit = { NSApp.terminate(nil) }
 
         hotkeyManager.start()
@@ -97,6 +98,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Settings.savedTarget = PersistedTarget(kind: .display, identifier: String(display.displayID), displayName: target.displayName)
         }
         startRecording()
+    }
+
+    private func setClipLength(_ seconds: Int) {
+        Settings.exportSeconds = Double(seconds)
+        statusBar.setClipLength(seconds)
+        captureEngine.applyBufferWindow()
     }
 
     private func toggleRecording() {

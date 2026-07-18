@@ -1,8 +1,8 @@
 # Snapshot
 
-A tiny menu-bar app for macOS that does one thing: hold a rolling ~30 second
-buffer of your gameplay and, on a hotkey, save it as an mp4. No OBS, no
-scenes, no config sprawl — an instant-replay button.
+A tiny menu-bar app for macOS that does one thing: hold a rolling buffer of
+your gameplay (15/30/60s, your choice) and, on a hotkey, save it as an mp4.
+No OBS, no scenes, no config sprawl — an instant-replay button.
 
 ## How it works
 
@@ -14,10 +14,11 @@ scenes, no config sprawl — an instant-replay button.
   one write to disk on trigger. No continuous disk I/O, no temp file cleanup.
 - Audio (system audio only, no mic) is buffered as raw PCM and AAC-encoded
   at save time.
-- Default hotkey **⌘⇧R** saves the last 30 seconds to
-  `~/Movies/Snapshot Clips/`. A brief on-screen toast (top-right corner,
-  click-through, visible over fullscreen/windowed games) confirms the save
-  succeeded — the menu bar icon flash alone is easy to miss mid-game.
+- Default hotkey **⌘⇧R** saves the last N seconds (15/30/60, set via the
+  **Clip Length** menu) to `~/Movies/Snapshot Clips/`. A brief on-screen
+  toast (top-right corner, click-through, visible over fullscreen/windowed
+  games) confirms the save succeeded — the menu bar icon flash alone is easy
+  to miss mid-game.
 
 ## Build & run
 
@@ -83,17 +84,23 @@ Click the menu bar icon (● record icon):
 - **Capture Target** — pick the app or display to record. Your choice is
   remembered and auto-selected next launch (falls back to searching for
   "World of Warcraft" by name if nothing's saved).
+- **Clip Length** — 15s / 30s / 60s. Takes effect immediately, even mid-recording
+  (no need to stop/restart). Persisted across launches.
 - **Start/Stop Recording** — begins/ends the rolling buffer.
-- **Save Last 30s Now** — same as the hotkey, useful without a keyboard.
+- **Save Last Ns Now** — same as the hotkey, useful without a keyboard.
 - **Show Clips Folder** — opens `~/Movies/Snapshot Clips/` in Finder.
 
 ## Tuning
 
 Everything's in `Sources/Snapshot/Settings.swift`:
 
-- `exportSeconds` — clip length (default 30s).
+- `exportSeconds` — clip length; user-adjustable at runtime via the Clip
+  Length menu (backed by UserDefaults), defaults to 30s.
+- `availableClipLengths` — the options offered in that menu (default
+  `[15, 30, 60]`); add/remove values here.
 - `bufferSeconds` — how much extra slack is kept in RAM beyond the export
-  window, so trimming to a keyframe never comes up short (default 40s).
+  window, so trimming to a keyframe never comes up short (`exportSeconds +
+  10`).
 - `videoBitrate`, `frameRate`, `keyframeIntervalSeconds` — quality/size
   tradeoffs.
 - Hotkey defaults to ⌘⇧R; change `hotkeyKeyCode`/`hotkeyModifiers` defaults

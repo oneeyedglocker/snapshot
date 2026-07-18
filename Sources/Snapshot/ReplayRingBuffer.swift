@@ -18,7 +18,7 @@ struct TimedSample {
 /// on every append, so memory stays bounded no matter how long capture runs.
 actor ReplayRingBuffer {
     private var samples: [TimedSample] = []
-    private let windowSeconds: Double
+    private var windowSeconds: Double
 
     init(windowSeconds: Double) {
         self.windowSeconds = windowSeconds
@@ -26,6 +26,14 @@ actor ReplayRingBuffer {
 
     func append(_ sample: TimedSample) {
         samples.append(sample)
+        prune()
+    }
+
+    /// Resizes the window live. Shrinking prunes immediately; growing just
+    /// means the buffer fills back up to the new size as capture continues
+    /// (already-dropped frames can't come back).
+    func setWindowSeconds(_ seconds: Double) {
+        windowSeconds = seconds
         prune()
     }
 

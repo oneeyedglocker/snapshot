@@ -9,12 +9,14 @@ final class StatusBarController: NSObject {
     private var displays: [SCDisplay] = []
     private var isRecording = false
     private var currentTargetName: String?
+    private var clipLengthSeconds = Int(Settings.exportSeconds)
 
     var onSelectApp: ((SCRunningApplication) -> Void)?
     var onSelectDisplay: ((SCDisplay) -> Void)?
     var onToggleRecording: (() -> Void)?
     var onSaveNow: (() -> Void)?
     var onRefreshTargets: (() -> Void)?
+    var onSelectClipLength: ((Int) -> Void)?
     var onQuit: (() -> Void)?
 
     override init() {
@@ -36,6 +38,11 @@ final class StatusBarController: NSObject {
             systemSymbolName: recording ? "record.circle.fill" : "record.circle",
             accessibilityDescription: nil
         )
+        statusItem.menu = buildMenu()
+    }
+
+    func setClipLength(_ seconds: Int) {
+        clipLengthSeconds = seconds
         statusItem.menu = buildMenu()
     }
 
@@ -89,6 +96,18 @@ final class StatusBarController: NSObject {
         let refreshItem = NSMenuItem(title: "Refresh Target List", action: #selector(refreshTargets), keyEquivalent: "")
         refreshItem.target = self
         menu.addItem(refreshItem)
+
+        let lengthMenu = NSMenu()
+        for seconds in Settings.availableClipLengths {
+            let item = NSMenuItem(title: "\(seconds)s", action: #selector(selectClipLengthMenuItem(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = seconds
+            item.state = seconds == clipLengthSeconds ? .on : .off
+            lengthMenu.addItem(item)
+        }
+        let lengthItem = NSMenuItem(title: "Clip Length", action: nil, keyEquivalent: "")
+        lengthItem.submenu = lengthMenu
+        menu.addItem(lengthItem)
         menu.addItem(.separator())
 
         let toggleItem = NSMenuItem(
@@ -99,7 +118,7 @@ final class StatusBarController: NSObject {
         toggleItem.target = self
         menu.addItem(toggleItem)
 
-        let saveItem = NSMenuItem(title: "Save Last 30s Now (\u{2318}\u{21e7}R)", action: #selector(saveNow), keyEquivalent: "")
+        let saveItem = NSMenuItem(title: "Save Last \(clipLengthSeconds)s Now (\u{2318}\u{21e7}R)", action: #selector(saveNow), keyEquivalent: "")
         saveItem.target = self
         saveItem.isEnabled = isRecording
         menu.addItem(saveItem)
@@ -131,6 +150,11 @@ final class StatusBarController: NSObject {
     @objc private func saveNow() { onSaveNow?() }
     @objc private func refreshTargets() { onRefreshTargets?() }
     @objc private func quit() { onQuit?() }
+
+    @objc private func selectClipLengthMenuItem(_ sender: NSMenuItem) {
+        guard let seconds = sender.representedObject as? Int else { return }
+        onSelectClipLength?(seconds)
+    }
 
     @objc private func revealOutputFolder() {
         NSWorkspace.shared.open(Settings.outputDirectory)

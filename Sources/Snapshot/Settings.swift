@@ -16,8 +16,24 @@ struct PersistedTarget: Codable {
 enum Settings {
     private static let defaults = UserDefaults.standard
 
-    static let bufferSeconds: Double = 40 // how much we keep in RAM
-    static let exportSeconds: Double = 30 // what a clip actually contains
+    static let availableClipLengths: [Int] = [15, 30, 60]
+
+    private static let exportSecondsKey = "exportSeconds"
+
+    /// What a clip actually contains, in seconds. User-configurable via the
+    /// menu (Clip Length submenu); persisted across launches.
+    static var exportSeconds: Double {
+        get {
+            let stored = defaults.integer(forKey: exportSecondsKey)
+            return availableClipLengths.contains(stored) ? Double(stored) : 30
+        }
+        set { defaults.set(Int(newValue), forKey: exportSecondsKey) }
+    }
+
+    /// How much extra slack beyond exportSeconds we keep in RAM, so trimming
+    /// to a keyframe on export never comes up short.
+    static var bufferSeconds: Double { exportSeconds + 10 }
+
     static let keyframeIntervalSeconds: Double = 2
     static let frameRate: Int32 = 30
     static let videoBitrate: Int = 8_000_000 // ~8 Mbps, good 1080p quality
