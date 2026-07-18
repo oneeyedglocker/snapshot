@@ -14,11 +14,14 @@ No OBS, no scenes, no config sprawl — an instant-replay button.
   one write to disk on trigger. No continuous disk I/O, no temp file cleanup.
 - Audio (system audio only, no mic) is buffered as raw PCM and AAC-encoded
   at save time.
-- Default hotkey **⌘⇧R** saves the last N seconds (15/30/60, set via the
-  **Clip Length** menu) to `~/Movies/Snapshot Clips/`. A brief on-screen
-  toast (top-right corner, click-through, visible over fullscreen/windowed
-  games) confirms the save succeeded — the menu bar icon flash alone is easy
-  to miss mid-game.
+- Two hotkeys, both editable from **Preferences** (no rebuild needed):
+  **⌘⇧R** saves the last N seconds (15/30/60, set via the **Clip Length**
+  menu), **⌘⇧F** always saves the longest available length regardless of
+  what N is currently set to — a "that was too good, grab everything" key.
+  Both save to `~/Movies/Snapshot Clips/`.
+- A brief on-screen toast (top-right corner, click-through, visible over
+  fullscreen/windowed games) confirms a save succeeded — the menu bar icon
+  flash alone is easy to miss mid-game.
 
 ## Build & run
 
@@ -87,24 +90,29 @@ Click the menu bar icon (● record icon):
 - **Clip Length** — 15s / 30s / 60s. Takes effect immediately, even mid-recording
   (no need to stop/restart). Persisted across launches.
 - **Start/Stop Recording** — begins/ends the rolling buffer.
-- **Save Last Ns Now** — same as the hotkey, useful without a keyboard.
+- **Save Last Ns Now** / **Save Full Length Now** — same as the two hotkeys,
+  useful without a keyboard. Menu labels always show the currently-bound combo.
 - **Show Clips Folder** — opens `~/Movies/Snapshot Clips/` in Finder.
+- **Preferences…** — opens a small window to rebind either hotkey: click a
+  shortcut, then press the new key combo (needs at least one modifier key;
+  Esc cancels). Rejects setting both hotkeys to the same combo.
 
 ## Tuning
 
 Everything's in `Sources/Snapshot/Settings.swift`:
 
-- `exportSeconds` — clip length; user-adjustable at runtime via the Clip
-  Length menu (backed by UserDefaults), defaults to 30s.
+- `exportSeconds` — default clip length; user-adjustable at runtime via the
+  Clip Length menu (backed by UserDefaults), defaults to 30s.
 - `availableClipLengths` — the options offered in that menu (default
   `[15, 30, 60]`); add/remove values here.
-- `bufferSeconds` — how much extra slack is kept in RAM beyond the export
-  window, so trimming to a keyframe never comes up short (`exportSeconds +
-  10`).
+- `bufferSeconds` — always sized to `availableClipLengths.max() + 10`, i.e.
+  the RAM window covers the longest possible clip regardless of which
+  default is currently selected, so the full-length hotkey never comes up
+  short.
 - `videoBitrate`, `frameRate`, `keyframeIntervalSeconds` — quality/size
   tradeoffs.
-- Hotkey defaults to ⌘⇧R; change `hotkeyKeyCode`/`hotkeyModifiers` defaults
-  or extend the menu with a picker if you want it configurable at runtime.
+- `saveClipHotkey` / `saveFullLengthHotkey` — default to ⌘⇧R / ⌘⇧F; both are
+  user-editable at runtime via **Preferences**, no rebuild needed.
 
 ## Notes / known limitations
 

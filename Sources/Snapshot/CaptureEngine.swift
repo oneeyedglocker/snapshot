@@ -148,14 +148,6 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         isRunning = true
     }
 
-    /// Applies the current Settings.bufferSeconds to both buffers immediately,
-    /// so changing clip length in the menu takes effect without a restart.
-    func applyBufferWindow() {
-        let seconds = Settings.bufferSeconds
-        Task { [videoBuffer] in await videoBuffer.setWindowSeconds(seconds) }
-        Task { [audioBuffer] in await audioBuffer.setWindowSeconds(seconds) }
-    }
-
     func stop() async {
         guard let stream else { return }
         try? await stream.stopCapture()

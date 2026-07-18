@@ -1,16 +1,25 @@
 import AppKit
 
-/// Global hotkey via NSEvent monitors. This needs the app to be trusted for
-/// Accessibility (System Settings > Privacy & Security > Accessibility) —
-/// without that, the global monitor silently never fires while another app
-/// (e.g. the game) has focus.
+/// Dispatches global hotkeys to registered actions by id, via NSEvent
+/// monitors. Needs the app to be trusted for Accessibility (System Settings
+/// > Privacy & Security > Accessibility) — without that, the global monitor
+/// silently never fires while another app (e.g. the game) has focus.
 final class HotkeyManager {
+    private struct Registration {
+        var combo: KeyCombo
+        let action: () -> Void
+    }
+
+    private var registrations: [String: Registration] = [:]
     private var globalMonitor: Any?
     private var localMonitor: Any?
-    private let onTrigger: () -> Void
 
-    init(onTrigger: @escaping () -> Void) {
-        self.onTrigger = onTrigger
+    func register(id: String, combo: KeyCombo, action: @escaping () -> Void) {
+        registrations[id] = Registration(combo: combo, action: action)
+    }
+
+    func updateBinding(id: String, combo: KeyCombo) {
+        registrations[id]?.combo = combo
     }
 
     func start() {
@@ -32,10 +41,10 @@ final class HotkeyManager {
     }
 
     private func handle(_ event: NSEvent) {
-        guard event.keyCode == Settings.hotkeyKeyCode else { return }
-        let relevantFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        guard relevantFlags == Settings.hotkeyModifiers else { return }
-        onTrigger()
+        let combo = KeyCombo(keyCode: event.keyCode, modifiers: event.modifierFlags.intersection(.deviceIndependentFlagsMask))
+        for registration in registrations.values where registration.combo == combo {
+            registration.action()
+        }
     }
 
     deinit {

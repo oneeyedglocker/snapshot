@@ -15,8 +15,10 @@ final class StatusBarController: NSObject {
     var onSelectDisplay: ((SCDisplay) -> Void)?
     var onToggleRecording: (() -> Void)?
     var onSaveNow: (() -> Void)?
+    var onSaveFullLengthNow: (() -> Void)?
     var onRefreshTargets: (() -> Void)?
     var onSelectClipLength: ((Int) -> Void)?
+    var onOpenPreferences: (() -> Void)?
     var onQuit: (() -> Void)?
 
     override init() {
@@ -43,6 +45,12 @@ final class StatusBarController: NSObject {
 
     func setClipLength(_ seconds: Int) {
         clipLengthSeconds = seconds
+        statusItem.menu = buildMenu()
+    }
+
+    /// Call after anything not otherwise tracked here changes (e.g. hotkeys
+    /// edited in Preferences), so the menu's display text stays current.
+    func refreshMenu() {
         statusItem.menu = buildMenu()
     }
 
@@ -118,15 +126,32 @@ final class StatusBarController: NSObject {
         toggleItem.target = self
         menu.addItem(toggleItem)
 
-        let saveItem = NSMenuItem(title: "Save Last \(clipLengthSeconds)s Now (\u{2318}\u{21e7}R)", action: #selector(saveNow), keyEquivalent: "")
+        let saveItem = NSMenuItem(
+            title: "Save Last \(clipLengthSeconds)s Now (\(Settings.saveClipHotkey.displayString))",
+            action: #selector(saveNow),
+            keyEquivalent: ""
+        )
         saveItem.target = self
         saveItem.isEnabled = isRecording
         menu.addItem(saveItem)
+
+        let saveFullItem = NSMenuItem(
+            title: "Save Full Length Now (\(Settings.saveFullLengthHotkey.displayString))",
+            action: #selector(saveFullLengthNow),
+            keyEquivalent: ""
+        )
+        saveFullItem.target = self
+        saveFullItem.isEnabled = isRecording
+        menu.addItem(saveFullItem)
         menu.addItem(.separator())
 
         let folderItem = NSMenuItem(title: "Show Clips Folder", action: #selector(revealOutputFolder), keyEquivalent: "")
         folderItem.target = self
         menu.addItem(folderItem)
+
+        let preferencesItem = NSMenuItem(title: "Preferences\u{2026}", action: #selector(openPreferences), keyEquivalent: ",")
+        preferencesItem.target = self
+        menu.addItem(preferencesItem)
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(title: "Quit Snapshot", action: #selector(quit), keyEquivalent: "q")
@@ -148,7 +173,9 @@ final class StatusBarController: NSObject {
 
     @objc private func toggleRecording() { onToggleRecording?() }
     @objc private func saveNow() { onSaveNow?() }
+    @objc private func saveFullLengthNow() { onSaveFullLengthNow?() }
     @objc private func refreshTargets() { onRefreshTargets?() }
+    @objc private func openPreferences() { onOpenPreferences?() }
     @objc private func quit() { onQuit?() }
 
     @objc private func selectClipLengthMenuItem(_ sender: NSMenuItem) {

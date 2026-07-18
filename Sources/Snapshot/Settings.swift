@@ -30,9 +30,13 @@ enum Settings {
         set { defaults.set(Int(newValue), forKey: exportSecondsKey) }
     }
 
-    /// How much extra slack beyond exportSeconds we keep in RAM, so trimming
-    /// to a keyframe on export never comes up short.
-    static var bufferSeconds: Double { exportSeconds + 10 }
+    /// How much we keep in RAM. Sized to the *longest* available clip length
+    /// (not the current default) plus keyframe slack, so "Save Full Length"
+    /// always has a full-length clip available regardless of what the quick
+    /// default is currently set to.
+    static var bufferSeconds: Double {
+        Double(availableClipLengths.max() ?? Int(exportSeconds)) + 10
+    }
 
     static let keyframeIntervalSeconds: Double = 2
     static let frameRate: Int32 = 30
@@ -47,27 +51,47 @@ enum Settings {
         return dir
     }()
 
-    // MARK: - Hotkey (default: Cmd+Shift+R)
+    // MARK: - Hotkeys
 
-    private static let hotkeyKeyCodeKey = "hotkeyKeyCode"
-    private static let hotkeyModifiersKey = "hotkeyModifiers"
+    private static let saveClipKeyCodeKey = "hotkeyKeyCode"
+    private static let saveClipModifiersKey = "hotkeyModifiers"
+    private static let saveFullKeyCodeKey = "fullLengthHotkeyKeyCode"
+    private static let saveFullModifiersKey = "fullLengthHotkeyModifiers"
 
-    static var hotkeyKeyCode: UInt16 {
-        get {
-            let stored = defaults.integer(forKey: hotkeyKeyCodeKey)
-            return stored == 0 && defaults.object(forKey: hotkeyKeyCodeKey) == nil ? 15 /* 'R' */ : UInt16(stored)
-        }
-        set { defaults.set(Int(newValue), forKey: hotkeyKeyCodeKey) }
+    private static func storedKeyCode(_ key: String, default defaultCode: UInt16) -> UInt16 {
+        defaults.object(forKey: key) == nil ? defaultCode : UInt16(defaults.integer(forKey: key))
     }
 
-    static var hotkeyModifiers: NSEvent.ModifierFlags {
+    private static func storedModifiers(_ key: String, default defaultMods: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+        defaults.object(forKey: key) == nil ? defaultMods : NSEvent.ModifierFlags(rawValue: UInt(defaults.integer(forKey: key)))
+    }
+
+    /// Default: Cmd+Shift+R. Saves a clip at the current default length.
+    static var saveClipHotkey: KeyCombo {
         get {
-            if defaults.object(forKey: hotkeyModifiersKey) == nil {
-                return [.command, .shift]
-            }
-            return NSEvent.ModifierFlags(rawValue: UInt(defaults.integer(forKey: hotkeyModifiersKey)))
+            KeyCombo(
+                keyCode: storedKeyCode(saveClipKeyCodeKey, default: 15 /* 'R' */),
+                modifiers: storedModifiers(saveClipModifiersKey, default: [.command, .shift])
+            )
         }
-        set { defaults.set(Int(newValue.rawValue), forKey: hotkeyModifiersKey) }
+        set {
+            defaults.set(Int(newValue.keyCode), forKey: saveClipKeyCodeKey)
+            defaults.set(Int(newValue.modifiers.rawValue), forKey: saveClipModifiersKey)
+        }
+    }
+
+    /// Default: Cmd+Shift+F. Always saves the longest available clip length.
+    static var saveFullLengthHotkey: KeyCombo {
+        get {
+            KeyCombo(
+                keyCode: storedKeyCode(saveFullKeyCodeKey, default: 3 /* 'F' */),
+                modifiers: storedModifiers(saveFullModifiersKey, default: [.command, .shift])
+            )
+        }
+        set {
+            defaults.set(Int(newValue.keyCode), forKey: saveFullKeyCodeKey)
+            defaults.set(Int(newValue.modifiers.rawValue), forKey: saveFullModifiersKey)
+        }
     }
 
     // MARK: - Last selected capture target

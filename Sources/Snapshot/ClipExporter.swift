@@ -11,14 +11,14 @@ enum ExportError: Error {
 /// H.264-encoded, so they're appended passthrough (no re-encoding, near
 /// instant). Audio is still raw PCM, so AVAssetWriter encodes it to AAC here.
 enum ClipExporter {
-    static func export(video: [TimedSample], audio: [TimedSample], to url: URL, completion: @escaping (Result<URL, Error>) -> Void) {
+    static func export(video: [TimedSample], audio: [TimedSample], lengthSeconds: Double, to url: URL, completion: @escaping (Result<URL, Error>) -> Void) {
         guard !video.isEmpty else {
             completion(.failure(ExportError.noVideoSamples))
             return
         }
 
         let latest = video[video.count - 1].presentationTime
-        let cutoff = latest - CMTime(seconds: Settings.exportSeconds, preferredTimescale: 600)
+        let cutoff = latest - CMTime(seconds: lengthSeconds, preferredTimescale: 600)
 
         // Walk back to the nearest keyframe at/before the cutoff so the clip
         // is decodable from frame one, even if that means it runs slightly

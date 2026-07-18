@@ -4,10 +4,23 @@ import CoreGraphics
 import ScreenCaptureKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let saveClipHotkeyID = "saveClip"
+    private static let saveFullHotkeyID = "saveFull"
+
     private let captureEngine = CaptureEngine()
     private lazy var statusBar = StatusBarController()
-    private lazy var hotkeyManager = HotkeyManager { [weak self] in self?.saveClip() }
+    private let hotkeyManager = HotkeyManager()
     private let overlay = OverlayHUD()
+    private lazy var preferencesWindowController: PreferencesWindowController = {
+        let controller = PreferencesWindowController()
+        controller.onHotkeyChanged = { [weak self] in
+            guard let self else { return }
+            hotkeyManager.updateBinding(id: Self.saveClipHotkeyID, combo: Settings.saveClipHotkey)
+            hotkeyManager.updateBinding(id: Self.saveFullHotkeyID, combo: Settings.saveFullLengthHotkey)
+            statusBar.refreshMenu()
+        }
+        return controller
+    }()
 
     private var currentTarget: CaptureTarget?
 
@@ -39,13 +52,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBar.onSelectApp = { [weak self] app in self?.select(target: .app(app)) }
         statusBar.onSelectDisplay = { [weak self] display in self?.select(target: .display(display)) }
         statusBar.onToggleRecording = { [weak self] in self?.toggleRecording() }
-        statusBar.onSaveNow = { [weak self] in self?.saveClip() }
+        statusBar.onSaveNow = { [weak self] in self?.saveClip(lengthSeconds: Settings.exportSeconds) }
+        statusBar.onSaveFullLengthNow = { [weak self] in self?.saveClip(lengthSeconds: self?.fullClipLengthSeconds ?? Settings.exportSeconds) }
         statusBar.onRefreshTargets = { [weak self] in self?.refreshTargets(autoStart: false) }
         statusBar.onSelectClipLength = { [weak self] seconds in self?.setClipLength(seconds) }
+        statusBar.onOpenPreferences = { [weak self] in self?.preferencesWindowController.show() }
         statusBar.onQuit = { NSApp.terminate(nil) }
 
+        hotkeyManager.register(id: Self.saveClipHotkeyID, combo: Settings.saveClipHotkey) { [weak self] in
+            self?.saveClip(lengthSeconds: Settings.exportSeconds)
+        }
+        hotkeyManager.register(id: Self.saveFullHotkeyID, combo: Settings.saveFullLengthHotkey) { [weak self] in
+            self?.saveClip(lengthSeconds: self?.fullClipLengthSeconds ?? Settings.exportSeconds)
+        }
         hotkeyManager.start()
         refreshTargets(autoStart: true)
+    }
+
+    private var fullClipLengthSeconds: Double {
+        Double(Settings.availableClipLengths.max() ?? Int(Settings.exportSeconds))
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -103,7 +128,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setClipLength(_ seconds: Int) {
         Settings.exportSeconds = Double(seconds)
         statusBar.setClipLength(seconds)
-        captureEngine.applyBufferWindow()
     }
 
     private func toggleRecording() {
@@ -135,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func saveClip() {
+    private func saveClip(lengthSeconds: Double) {
         guard captureEngine.isRunning else { return }
         Task {
             let video = await captureEngine.videoBuffer.snapshot()
@@ -144,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
             let url = Settings.outputDirectory.appendingPathComponent("Clip \(formatter.string(from: Date())).mp4")
 
-            ClipExporter.export(video: video, audio: audio, to: url) { [weak self] result in
+            ClipExporter.export(video: video, audio: audio, lengthSeconds: lengthSeconds, to: url) { [weak self] result in
                 DispatchQueue.main.async {
                     switch result {
                     case .success(let savedURL):
