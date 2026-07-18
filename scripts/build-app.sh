@@ -7,7 +7,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 echo "Building (release)..."
-swift build -c release
+# Use xcrun rather than a bare `swift` — on some machines PATH resolves
+# `swift` to an unrelated tool (e.g. the OpenStack `python-swiftclient`
+# package installs its own `swift` entry point). xcrun goes straight to the
+# active Xcode's toolchain, bypassing PATH entirely.
+xcrun swift build -c release
 
 APP_DIR="build/Snapshot.app"
 rm -rf "$APP_DIR"
