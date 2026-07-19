@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.async {
                 self?.statusBar.setRecording(false, targetName: nil)
                 if let error {
-                    NSLog("%@", "Snapshot: capture stopped with error: \(error)")
+                    NSLog("%{public}@", "Snapshot: capture stopped with error: \(error)")
                 }
             }
         }
@@ -108,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.tryAutoStart(with: targets)
                     }
                 } catch {
-                    NSLog("%@", "Snapshot: auto-start after launch failed to list targets: \(error)")
+                    NSLog("%{public}@", "Snapshot: auto-start after launch failed to list targets: \(error)")
                 }
                 let stillNotRunning = await MainActor.run { !self.captureEngine.isRunning }
                 if stillNotRunning, attempt < 3 {
@@ -147,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     tryAutoStart(with: targets)
                 }
             } catch {
-                NSLog("%@", "Snapshot: failed to list capture targets: \(error)")
+                NSLog("%{public}@", "Snapshot: failed to list capture targets: \(error)")
             }
         }
     }
@@ -232,11 +232,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     switch result {
                     case .success(let savedURL):
-                        NSLog("%@", "Snapshot: saved clip to \(savedURL.path)")
+                        NSLog("%{public}@", "Snapshot: saved clip to \(savedURL.path)")
                         self?.statusBar.flashSaved()
                         self?.overlay.show(text: "Clip saved", systemSymbolName: "checkmark.circle.fill", tintColor: .systemGreen)
                     case .failure(let error):
-                        NSLog("%@", "Snapshot: export failed: \(error)")
+                        NSLog("%{public}@", "Snapshot: export failed: \(error)")
                         self?.overlay.show(text: "Save failed", systemSymbolName: "xmark.circle.fill", tintColor: .systemRed)
                     }
                 }
