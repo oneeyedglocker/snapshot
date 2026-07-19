@@ -112,8 +112,13 @@ Everything's in `Sources/Snapshot/Settings.swift`:
   the RAM window covers the longest possible clip regardless of which
   default is currently selected, so the full-length hotkey never comes up
   short.
-- `videoBitrate`, `frameRate`, `keyframeIntervalSeconds` — quality/size
-  tradeoffs.
+- `bitsPerPixelPerFrame` (private, backs `videoBitrate(width:height:)`) —
+  bitrate scales with actual capture resolution rather than a flat number,
+  since a fixed bitrate that looks fine at 1080p looks noticeably blocky at
+  higher resolutions (e.g. a Retina display's window can easily be 3000px+
+  wide). Defaults to 0.2 bits/pixel/frame, clamped to 6–60 Mbps; raise it if
+  quality still isn't good enough, at the cost of larger clip files.
+- `frameRate`, `keyframeIntervalSeconds` — further quality/size tradeoffs.
 - `saveClipHotkey` / `saveFullLengthHotkey` — default to ⌘⇧R / ⌘⇧F; both are
   user-editable at runtime via **Preferences**, no rebuild needed.
 

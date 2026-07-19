@@ -35,7 +35,18 @@ final class VideoEncoder {
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_H264_High_AutoLevel)
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: Settings.videoBitrate as CFNumber)
+        let bitrate = Settings.videoBitrate(width: Int(width), height: Int(height))
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: bitrate as CFNumber)
+        // DataRateLimits caps peak instantaneous rate so busy frames (particle-
+        // heavy combat, fast camera pans) don't get starved relative to the
+        // average — without this, VideoToolbox's rate control can let quality
+        // sag noticeably during exactly the moments you'd want a clean clip.
+        let bytesPerSecond = bitrate / 8
+        VTSessionSetProperty(
+            session,
+            key: kVTCompressionPropertyKey_DataRateLimits,
+            value: [bytesPerSecond * 2, 1] as CFArray
+        )
         VTSessionSetProperty(
             session,
             key: kVTCompressionPropertyKey_MaxKeyFrameInterval,

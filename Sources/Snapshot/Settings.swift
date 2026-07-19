@@ -40,9 +40,19 @@ enum Settings {
 
     static let keyframeIntervalSeconds: Double = 2
     static let frameRate: Int32 = 30
-    static let videoBitrate: Int = 8_000_000 // ~8 Mbps, good 1080p quality
     static let audioSampleRate: Double = 48_000
     static let audioChannels: Int = 2
+
+    /// A flat bitrate is wrong across resolutions — 8 Mbps looks fine at
+    /// 1080p but visibly blocky on a high-DPI capture (which is common: a
+    /// Retina display's window can easily be 3000px+ wide). Scale with
+    /// actual pixel count instead, clamped to a sane range.
+    private static let bitsPerPixelPerFrame: Double = 0.2
+
+    static func videoBitrate(width: Int, height: Int) -> Int {
+        let bitrate = Int((Double(width * height) * Double(frameRate) * bitsPerPixelPerFrame).rounded())
+        return min(max(bitrate, 6_000_000), 60_000_000)
+    }
 
     static var outputDirectory: URL = {
         let movies = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
