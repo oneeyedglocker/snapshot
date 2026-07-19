@@ -39,6 +39,12 @@ enum ClipExporter {
             return
         }
         let trimmedAudio = audio.filter { $0.presentationTime >= clipStart }
+        NSLog(
+            "%@",
+            "Snapshot: export audio: \(audio.count) buffered total (first=\(audio.first.map { CMTimeGetSeconds($0.presentationTime) }.map(String.init) ?? "n/a"), "
+            + "last=\(audio.last.map { CMTimeGetSeconds($0.presentationTime) }.map(String.init) ?? "n/a")), clipStart=\(CMTimeGetSeconds(clipStart)), "
+            + "trimmedAudio=\(trimmedAudio.count)"
+        )
 
         do {
             let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
@@ -64,7 +70,11 @@ enum ClipExporter {
                 if writer.canAdd(input) {
                     writer.add(input)
                     audioInput = input
+                } else {
+                    NSLog("%@", "Snapshot: writer.canAdd(audioInput) returned false, clip will be silent")
                 }
+            } else {
+                NSLog("%@", "Snapshot: trimmedAudio is empty, clip will be silent")
             }
 
             guard writer.startWriting() else {

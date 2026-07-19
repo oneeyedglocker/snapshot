@@ -54,6 +54,11 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     private var worstGapSinceLog: Double = 0
     private var lastFrameLogTime = Date()
 
+    // Audio diagnostics, only ever touched from audioQueue.
+    private var audioSamplesSinceLog = 0
+    private var lastAudioLogTime = Date()
+    private var hasLoggedFirstAudioSample = false
+
     var onStreamStopped: ((Error?) -> Void)?
 
     private(set) var isRunning = false
@@ -154,6 +159,11 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             worstGapSinceLog = 0
             lastFrameLogTime = Date()
         }
+        audioQueue.sync {
+            audioSamplesSinceLog = 0
+            lastAudioLogTime = Date()
+            hasLoggedFirstAudioSample = false
+        }
 
         let newStream = SCStream(filter: filter, configuration: config, delegate: self)
         try newStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: videoQueue)
@@ -182,6 +192,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             logFrameTiming(sampleBuffer.presentationTimeStamp)
             videoEncoder?.encode(sampleBuffer)
         case .audio:
+            logAudioTiming(sampleBuffer.presentationTimeStamp)
             let sample = TimedSample(sampleBuffer: sampleBuffer, isKeyframe: true)
             Task { [audioBuffer] in await audioBuffer.append(sample) }
         case .microphone:
@@ -222,6 +233,33 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             gappyFramesSinceLog = 0
             worstGapSinceLog = 0
             lastFrameLogTime = now
+        }
+    }
+
+    /// Diagnoses whether SCStream is delivering *any* audio at all — user
+    /// reports of silent clips could mean either (a) ScreenCaptureKit never
+    /// hands us audio samples in the first place (e.g. a limitation of
+    /// window-scoped SCContentFilter vs. display-scoped filters, or the
+    /// app/game genuinely has no active audio session), or (b) samples do
+    /// arrive but get dropped later (buffer pruning, export-time filtering
+    /// by a mismatched clock). This narrows it to the SCStream boundary.
+    /// Only ever called from audioQueue.
+    private func logAudioTiming(_ pts: CMTime) {
+        if !hasLoggedFirstAudioSample {
+            hasLoggedFirstAudioSample = true
+            NSLog("%@", "Snapshot: first audio sample received, pts=\(CMTimeGetSeconds(pts))s")
+        }
+        audioSamplesSinceLog += 1
+
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastAudioLogTime)
+        if elapsed >= 5 {
+            NSLog(
+                "%@",
+                String(format: "Snapshot: audio samples in last %.1fs: %d", elapsed, audioSamplesSinceLog)
+            )
+            audioSamplesSinceLog = 0
+            lastAudioLogTime = now
         }
     }
 
