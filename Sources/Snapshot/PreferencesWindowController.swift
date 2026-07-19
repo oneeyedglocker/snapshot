@@ -14,6 +14,7 @@ final class PreferencesWindowController: NSWindowController {
     private var saveClipButton: NSButton!
     private var saveFullButton: NSButton!
     private var recordingMonitor: Any?
+    private var recordingButton: NSButton?
 
     convenience init() {
         let window = NSWindow(
@@ -83,6 +84,15 @@ final class PreferencesWindowController: NSWindowController {
 
     private func beginRecording(for target: HotkeyTarget) {
         let button = target == .saveClip ? saveClipButton! : saveFullButton!
+
+        // If a *different* button was mid-recording, its session is about to
+        // be torn down without ever reaching endRecording — restore it now
+        // instead of leaving it permanently disabled.
+        if let recordingButton, recordingButton !== button {
+            recordingButton.isEnabled = true
+        }
+        recordingButton = button
+
         button.title = "Press new shortcut\u{2026}"
         button.isEnabled = false
 
@@ -133,6 +143,9 @@ final class PreferencesWindowController: NSWindowController {
             self.recordingMonitor = nil
         }
         button.isEnabled = true
+        if recordingButton === button {
+            recordingButton = nil
+        }
         refreshLabels()
     }
 
@@ -141,5 +154,9 @@ final class PreferencesWindowController: NSWindowController {
             NSEvent.removeMonitor(recordingMonitor)
             self.recordingMonitor = nil
         }
+        // Closing mid-recording would otherwise leave whichever button was
+        // active permanently disabled, even after the window reopens.
+        recordingButton?.isEnabled = true
+        recordingButton = nil
     }
 }
