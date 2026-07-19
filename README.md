@@ -121,11 +121,26 @@ Everything's in `Sources/Snapshot/Settings.swift`:
   higher resolutions (e.g. a Retina display's window can easily be 3000px+
   wide). Defaults to 0.28 bits/pixel/frame (set relative to HEVC, which is
   meaningfully more efficient than H.264 at the same visual quality),
-  clamped to 6–60 Mbps; raise it if quality still isn't good enough, at the
+  clamped to 6–100 Mbps; raise it if quality still isn't good enough, at the
   cost of larger clip files.
-- `frameRate`, `keyframeIntervalSeconds` — further quality/size tradeoffs.
+- `frameRate` — 60fps by default. Frame-timing diagnostics (see below) showed
+  the capture pipeline holding steady at ~30fps with essentially zero
+  dropped/delayed frames, so there was headroom to raise it to match typical
+  game render rates.
+- `keyframeIntervalSeconds` — further quality/size tradeoff.
 - `saveClipHotkey` / `saveFullLengthHotkey` — default to ⌘⇧R / ⌘⇧F; both are
   user-editable at runtime via **Preferences**, no rebuild needed.
+
+## Debugging
+
+Run `./build/Snapshot.app/Contents/MacOS/Snapshot` directly from Terminal
+(instead of `open`) to see `NSLog` output live — useful since a lot of the
+app's internals (hotkey binding, capture start/stop, export results) log
+there. `CaptureEngine` also logs a frame-timing summary every ~5 seconds
+while recording (captured fps, and how many frame-to-frame gaps exceeded
+1.5x the expected interval) — handy for telling apart "the configured frame
+rate is just low" from "the encoder/system is actually falling behind and
+dropping frames," which have opposite fixes.
 
 ## Notes / known limitations
 

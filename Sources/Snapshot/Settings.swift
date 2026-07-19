@@ -39,7 +39,12 @@ enum Settings {
     }
 
     static let keyframeIntervalSeconds: Double = 2
-    static let frameRate: Int32 = 30
+    /// Frame-timing diagnostics showed the capture pipeline holding a
+    /// rock-steady ~30fps with essentially zero dropped/delayed frames, so
+    /// there was headroom to spare — bumped to 60 to match typical game
+    /// render rates, which is what "choppy" turned out to actually be about
+    /// rather than encoder/system overload.
+    static let frameRate: Int32 = 60
     static let audioSampleRate: Double = 48_000
     static let audioChannels: Int = 2
 
@@ -55,7 +60,7 @@ enum Settings {
 
     static func videoBitrate(width: Int, height: Int) -> Int {
         let bitrate = Int((Double(width * height) * Double(frameRate) * bitsPerPixelPerFrame).rounded())
-        return min(max(bitrate, 6_000_000), 60_000_000)
+        return min(max(bitrate, 6_000_000), 100_000_000)
     }
 
     static var outputDirectory: URL = {
