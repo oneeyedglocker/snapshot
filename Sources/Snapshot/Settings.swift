@@ -56,11 +56,11 @@ enum Settings {
     /// meaningfully more efficient than H.264 at the same visual quality, so
     /// this can run higher than a comparable H.264-only target without
     /// ballooning file size the way it would have under H.264.
-    private static let bitsPerPixelPerFrame: Double = 0.45
+    private static let bitsPerPixelPerFrame: Double = 0.36
 
     static func videoBitrate(width: Int, height: Int) -> Int {
         let bitrate = Int((Double(width * height) * Double(frameRate) * bitsPerPixelPerFrame).rounded())
-        return min(max(bitrate, 6_000_000), 150_000_000)
+        return min(max(bitrate, 6_000_000), 120_000_000)
     }
 
     static var outputDirectory: URL = {
