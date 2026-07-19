@@ -97,27 +97,27 @@ final class PreferencesWindowController: NSWindowController {
         button.isEnabled = false
 
         if let recordingMonitor { NSEvent.removeMonitor(recordingMonitor) }
-        NSLog("%{public}@", "Snapshot: began recording new combo for \(target)")
+        NSLog("%@", "Snapshot: began recording new combo for \(target)")
         recordingMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
-            NSLog("%{public}@", "Snapshot: recorder saw keyCode=\(event.keyCode) rawModifiers=\(event.modifierFlags.rawValue)")
+            NSLog("%@", "Snapshot: recorder saw keyCode=\(event.keyCode) rawModifiers=\(event.modifierFlags.rawValue)")
 
             if event.keyCode == 53 { // Escape cancels, no change committed
-                NSLog("%{public}@", "Snapshot: recording cancelled (Escape)")
+                NSLog("%@", "Snapshot: recording cancelled (Escape)")
                 self.endRecording(button: button)
                 return nil
             }
 
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard !modifiers.isEmpty else {
-                NSLog("%{public}@", "Snapshot: ignored bare keypress with no modifiers, still recording")
+                NSLog("%@", "Snapshot: ignored bare keypress with no modifiers, still recording")
                 return nil // swallow bare keypresses; keep waiting for a real combo
             }
 
             let combo = KeyCombo(keyCode: event.keyCode, modifiers: modifiers)
             let other = target == .saveClip ? Settings.saveFullLengthHotkey : Settings.saveClipHotkey
             guard combo != other else {
-                NSLog("%{public}@", "Snapshot: rejected \(combo.displayString), collides with the other hotkey")
+                NSLog("%@", "Snapshot: rejected \(combo.displayString), collides with the other hotkey")
                 self.endRecording(button: button)
                 let alert = NSAlert()
                 alert.messageText = "Shortcut already in use"
@@ -130,7 +130,7 @@ final class PreferencesWindowController: NSWindowController {
             case .saveClip: Settings.saveClipHotkey = combo
             case .saveFull: Settings.saveFullLengthHotkey = combo
             }
-            NSLog("%{public}@", "Snapshot: committed \(target) = \(combo.displayString); saveClipHotkey now reads \(Settings.saveClipHotkey.displayString), saveFullLengthHotkey now reads \(Settings.saveFullLengthHotkey.displayString)")
+            NSLog("%@", "Snapshot: committed \(target) = \(combo.displayString); saveClipHotkey now reads \(Settings.saveClipHotkey.displayString), saveFullLengthHotkey now reads \(Settings.saveFullLengthHotkey.displayString)")
             self.endRecording(button: button)
             self.onHotkeyChanged?()
             return nil
