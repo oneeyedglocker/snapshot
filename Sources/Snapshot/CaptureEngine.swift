@@ -46,6 +46,14 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     private let videoQueue = DispatchQueue(label: "snapshot.capture.video")
     private let audioQueue = DispatchQueue(label: "snapshot.capture.audio")
 
+    // Frame-timing diagnostics, only ever touched from videoQueue (the
+    // SCStreamOutput callback for .screen runs serially there).
+    private var lastVideoFramePTS: CMTime?
+    private var framesSinceLog = 0
+    private var gappyFramesSinceLog = 0
+    private var worstGapSinceLog: Double = 0
+    private var lastFrameLogTime = Date()
+
     var onStreamStopped: ((Error?) -> Void)?
 
     private(set) var isRunning = false
@@ -139,6 +147,14 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         await videoBuffer.reset()
         await audioBuffer.reset()
 
+        videoQueue.sync {
+            lastVideoFramePTS = nil
+            framesSinceLog = 0
+            gappyFramesSinceLog = 0
+            worstGapSinceLog = 0
+            lastFrameLogTime = Date()
+        }
+
         let newStream = SCStream(filter: filter, configuration: config, delegate: self)
         try newStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: videoQueue)
         try newStream.addStreamOutput(self, type: .audio, sampleHandlerQueue: audioQueue)
@@ -163,6 +179,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         guard sampleBuffer.isValid, CMSampleBufferDataIsReady(sampleBuffer) else { return }
         switch type {
         case .screen:
+            logFrameTiming(sampleBuffer.presentationTimeStamp)
             videoEncoder?.encode(sampleBuffer)
         case .audio:
             let sample = TimedSample(sampleBuffer: sampleBuffer, isKeyframe: true)
@@ -171,6 +188,37 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             break // we don't request microphone capture (see SCStreamConfiguration.capturesMicrophone, unused)
         @unknown default:
             break
+        }
+    }
+
+    /// Diagnoses whether ScreenCaptureKit is delivering frames at a steady
+    /// cadence. A real gap here means the system (game + encoder +
+    /// everything else sharing the GPU/media engine) can't keep up in real
+    /// time — independent of anything downstream in our own pipeline. Only
+    /// ever called from videoQueue, so these counters don't need locking.
+    private func logFrameTiming(_ pts: CMTime) {
+        let expectedInterval = 1.0 / Double(Settings.frameRate)
+        if let lastVideoFramePTS {
+            let gap = CMTimeGetSeconds(pts - lastVideoFramePTS)
+            if gap > expectedInterval * 1.5 {
+                gappyFramesSinceLog += 1
+                worstGapSinceLog = max(worstGapSinceLog, gap)
+            }
+        }
+        lastVideoFramePTS = pts
+        framesSinceLog += 1
+
+        let now = Date()
+        let elapsed = now.timeIntervalSince(lastFrameLogTime)
+        if elapsed >= 5 {
+            print(String(
+                format: "Snapshot: video frames in last %.1fs: %d (%.1f fps), gaps>1.5x expected interval: %d, worst gap: %.0fms",
+                elapsed, framesSinceLog, Double(framesSinceLog) / elapsed, gappyFramesSinceLog, worstGapSinceLog * 1000
+            ))
+            framesSinceLog = 0
+            gappyFramesSinceLog = 0
+            worstGapSinceLog = 0
+            lastFrameLogTime = now
         }
     }
 
