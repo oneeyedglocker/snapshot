@@ -2,10 +2,11 @@ import CoreMedia
 import Foundation
 import VideoToolbox
 
-/// Wraps a VTCompressionSession to turn raw captured frames into H.264, one
-/// frame at a time, in real time. We disable frame reordering so decode order
-/// always matches display order — that keeps the ring-buffer/export logic
-/// (which just slices a contiguous array of encoded samples) simple and correct.
+/// Wraps a VTCompressionSession to turn raw captured frames into H.265/HEVC
+/// (falling back to H.264 on hardware without a HEVC encoder), one frame at
+/// a time, in real time. We disable frame reordering so decode order always
+/// matches display order — that keeps the ring-buffer/export logic (which
+/// just slices a contiguous array of encoded samples) simple and correct.
 final class VideoEncoder {
     private var session: VTCompressionSession?
     private let onEncodedFrame: (TimedSample) -> Void
@@ -13,28 +14,45 @@ final class VideoEncoder {
     init?(width: Int32, height: Int32, onEncodedFrame: @escaping (TimedSample) -> Void) {
         self.onEncodedFrame = onEncodedFrame
 
-        var newSession: VTCompressionSession?
-        let status = VTCompressionSessionCreate(
-            allocator: kCFAllocatorDefault,
-            width: width,
-            height: height,
-            codecType: kCMVideoCodecType_H264,
-            encoderSpecification: nil,
-            imageBufferAttributes: nil,
-            compressedDataAllocator: nil,
-            outputCallback: nil,
-            refcon: nil,
-            compressionSessionOut: &newSession
-        )
-        guard status == noErr, let session = newSession else {
-            print("Snapshot: failed to create VTCompressionSession (\(status))")
+        func createSession(codecType: CMVideoCodecType) -> VTCompressionSession? {
+            var newSession: VTCompressionSession?
+            let status = VTCompressionSessionCreate(
+                allocator: kCFAllocatorDefault,
+                width: width,
+                height: height,
+                codecType: codecType,
+                encoderSpecification: nil,
+                imageBufferAttributes: nil,
+                compressedDataAllocator: nil,
+                outputCallback: nil,
+                refcon: nil,
+                compressionSessionOut: &newSession
+            )
+            guard status == noErr else {
+                print("Snapshot: VTCompressionSessionCreate failed for codec \(codecType) (\(status))")
+                return nil
+            }
+            return newSession
+        }
+
+        // HEVC is ~30-50% more efficient than H.264 at the same visual
+        // quality on the same hardware-accelerated path, but not every Mac
+        // has a hardware HEVC encoder — fall back to H.264 if it's missing.
+        var profileLevel = kVTProfileLevel_HEVC_Main_AutoLevel
+        var session = createSession(codecType: kCMVideoCodecType_HEVC)
+        if session == nil {
+            profileLevel = kVTProfileLevel_H264_High_AutoLevel
+            session = createSession(codecType: kCMVideoCodecType_H264)
+        }
+        guard let session else {
+            print("Snapshot: failed to create a VTCompressionSession with any supported codec")
             return nil
         }
         self.session = session
 
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime, value: kCFBooleanTrue)
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering, value: kCFBooleanFalse)
-        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: kVTProfileLevel_H264_High_AutoLevel)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel, value: profileLevel)
         let bitrate = Settings.videoBitrate(width: Int(width), height: Int(height))
         VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate, value: bitrate as CFNumber)
         // DataRateLimits caps peak instantaneous rate so busy frames (particle-

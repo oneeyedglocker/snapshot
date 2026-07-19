@@ -8,10 +8,13 @@ No OBS, no scenes, no config sprawl — an instant-replay button.
 
 - Captures via `ScreenCaptureKit`, bound to a specific app's window (default:
   World of Warcraft, auto-detected by name) or a specific display.
-- Video is encoded to H.264 in real time (VideoToolbox, hardware accelerated)
-  and kept in a **RAM ring buffer** — never written to disk until you save.
-  This mirrors how OBS's own Replay Buffer works: encoded frames in memory,
-  one write to disk on trigger. No continuous disk I/O, no temp file cleanup.
+- Video is encoded to HEVC in real time (VideoToolbox, hardware accelerated;
+  falls back to H.264 if a Mac lacks a hardware HEVC encoder) and kept in a
+  **RAM ring buffer** — never written to disk until you save. This mirrors
+  how OBS's own Replay Buffer works: encoded frames in memory, one write to
+  disk on trigger. No continuous disk I/O, no temp file cleanup. Bitrate
+  scales with actual capture resolution rather than a flat number, so
+  quality doesn't degrade on high-DPI captures.
 - Audio (system audio only, no mic) is buffered as raw PCM and AAC-encoded
   at save time.
 - Two hotkeys, both editable from **Preferences** (no rebuild needed):
@@ -116,8 +119,10 @@ Everything's in `Sources/Snapshot/Settings.swift`:
   bitrate scales with actual capture resolution rather than a flat number,
   since a fixed bitrate that looks fine at 1080p looks noticeably blocky at
   higher resolutions (e.g. a Retina display's window can easily be 3000px+
-  wide). Defaults to 0.2 bits/pixel/frame, clamped to 6–60 Mbps; raise it if
-  quality still isn't good enough, at the cost of larger clip files.
+  wide). Defaults to 0.28 bits/pixel/frame (set relative to HEVC, which is
+  meaningfully more efficient than H.264 at the same visual quality),
+  clamped to 6–60 Mbps; raise it if quality still isn't good enough, at the
+  cost of larger clip files.
 - `frameRate`, `keyframeIntervalSeconds` — further quality/size tradeoffs.
 - `saveClipHotkey` / `saveFullLengthHotkey` — default to ⌘⇧R / ⌘⇧F; both are
   user-editable at runtime via **Preferences**, no rebuild needed.

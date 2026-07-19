@@ -8,8 +8,9 @@ enum ExportError: Error {
 }
 
 /// Muxes a slice of the ring buffer into an .mp4. Video samples are already
-/// H.264-encoded, so they're appended passthrough (no re-encoding, near
-/// instant). Audio is still raw PCM, so AVAssetWriter encodes it to AAC here.
+/// encoded (HEVC, or H.264 as a fallback — see VideoEncoder), so they're
+/// appended passthrough (no re-encoding, near instant). Audio is still raw
+/// PCM, so AVAssetWriter encodes it to AAC here.
 enum ClipExporter {
     static func export(video: [TimedSample], audio: [TimedSample], lengthSeconds: Double, to url: URL, completion: @escaping (Result<URL, Error>) -> Void) {
         guard !video.isEmpty else {

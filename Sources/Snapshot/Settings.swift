@@ -43,11 +43,15 @@ enum Settings {
     static let audioSampleRate: Double = 48_000
     static let audioChannels: Int = 2
 
-    /// A flat bitrate is wrong across resolutions — 8 Mbps looks fine at
-    /// 1080p but visibly blocky on a high-DPI capture (which is common: a
+    /// A flat bitrate is wrong across resolutions — a number that looks fine
+    /// at 1080p is visibly blocky on a high-DPI capture (which is common: a
     /// Retina display's window can easily be 3000px+ wide). Scale with
-    /// actual pixel count instead, clamped to a sane range.
-    private static let bitsPerPixelPerFrame: Double = 0.2
+    /// actual pixel count instead, clamped to a sane range. Set relative to
+    /// HEVC (VideoEncoder prefers it, falling back to H.264) — HEVC is
+    /// meaningfully more efficient than H.264 at the same visual quality, so
+    /// this can run higher than a comparable H.264-only target without
+    /// ballooning file size the way it would have under H.264.
+    private static let bitsPerPixelPerFrame: Double = 0.28
 
     static func videoBitrate(width: Int, height: Int) -> Int {
         let bitrate = Int((Double(width * height) * Double(frameRate) * bitsPerPixelPerFrame).rounded())
