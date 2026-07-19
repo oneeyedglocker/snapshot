@@ -211,10 +211,13 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         let now = Date()
         let elapsed = now.timeIntervalSince(lastFrameLogTime)
         if elapsed >= 5 {
-            print(String(
-                format: "Snapshot: video frames in last %.1fs: %d (%.1f fps), gaps>1.5x expected interval: %d, worst gap: %.0fms",
-                elapsed, framesSinceLog, Double(framesSinceLog) / elapsed, gappyFramesSinceLog, worstGapSinceLog * 1000
-            ))
+            NSLog(
+                "%@",
+                String(
+                    format: "Snapshot: video frames in last %.1fs: %d (%.1f fps), gaps>1.5x expected interval: %d, worst gap: %.0fms",
+                    elapsed, framesSinceLog, Double(framesSinceLog) / elapsed, gappyFramesSinceLog, worstGapSinceLog * 1000
+                )
+            )
             framesSinceLog = 0
             gappyFramesSinceLog = 0
             worstGapSinceLog = 0

@@ -29,7 +29,7 @@ final class VideoEncoder {
                 compressionSessionOut: &newSession
             )
             guard status == noErr else {
-                print("Snapshot: VTCompressionSessionCreate failed for codec \(codecType) (\(status))")
+                NSLog("%@", "Snapshot: VTCompressionSessionCreate failed for codec \(codecType) (\(status))")
                 return nil
             }
             return newSession
@@ -45,7 +45,7 @@ final class VideoEncoder {
             session = createSession(codecType: kCMVideoCodecType_H264)
         }
         guard let session else {
-            print("Snapshot: failed to create a VTCompressionSession with any supported codec")
+            NSLog("%@", "Snapshot: failed to create a VTCompressionSession with any supported codec")
             return nil
         }
         self.session = session
