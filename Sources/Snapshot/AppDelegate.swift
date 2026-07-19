@@ -104,8 +104,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 do {
                     let targets = try await CaptureEngine.availableTargets()
                     await MainActor.run {
-                        statusBar.update(targets: targets)
-                        tryAutoStart(with: targets)
+                        self.statusBar.update(targets: targets)
+                        self.tryAutoStart(with: targets)
                     }
                 } catch {
                     print("Snapshot: auto-start after launch failed to list targets: \(error)")
