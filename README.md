@@ -86,7 +86,10 @@ Click the menu bar icon (● record icon):
 
 - **Capture Target** — pick the app or display to record. Your choice is
   remembered and auto-selected next launch (falls back to searching for
-  "World of Warcraft" by name if nothing's saved).
+  "World of Warcraft" by name if nothing's saved). Recording also
+  auto-starts the moment that app launches (even if Snapshot was already
+  running and idle), and auto-stops when it quits — so with WoW set as the
+  target, just launching WoW is enough; no need to touch Snapshot at all.
 - **Clip Length** — 15s / 30s / 60s. Takes effect immediately, even mid-recording
   (no need to stop/restart). Persisted across launches.
 - **Start/Stop Recording** — begins/ends the rolling buffer.

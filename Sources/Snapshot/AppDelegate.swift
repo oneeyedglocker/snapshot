@@ -67,6 +67,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hotkeyManager.start()
         refreshTargets(autoStart: true)
+        observeAppLifecycle()
+    }
+
+    /// Watches for the preferred target app launching/quitting, so recording
+    /// starts the moment you open WoW and stops when you close it — no need
+    /// to remember to click Start/Stop.
+    private func observeAppLifecycle() {
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(self, selector: #selector(runningAppDidLaunch(_:)), name: NSWorkspace.didLaunchApplicationNotification, object: nil)
+        center.addObserver(self, selector: #selector(runningAppDidTerminate(_:)), name: NSWorkspace.didTerminateApplicationNotification, object: nil)
+    }
+
+    @objc private func runningAppDidLaunch(_ notification: Notification) {
+        guard !captureEngine.isRunning,
+              let launched = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              isPreferredTarget(launched) else { return }
+        attemptAutoStartAfterLaunch(attempt: 1)
+    }
+
+    private func isPreferredTarget(_ app: NSRunningApplication) -> Bool {
+        if let saved = Settings.savedTarget, saved.kind == .app {
+            return app.bundleIdentifier == saved.identifier
+        }
+        return (app.localizedName ?? "").localizedCaseInsensitiveContains("World of Warcraft")
+    }
+
+    /// ScreenCaptureKit won't list the app's window until it's actually
+    /// created one, which can lag a few seconds behind process launch
+    /// (loading screens, launcher handoff), so retry a few times.
+    private func attemptAutoStartAfterLaunch(attempt: Int) {
+        let delay: TimeInterval = attempt == 1 ? 3 : 6
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, !captureEngine.isRunning else { return }
+            Task {
+                do {
+                    let targets = try await CaptureEngine.availableTargets()
+                    await MainActor.run {
+                        statusBar.update(targets: targets)
+                        tryAutoStart(with: targets)
+                    }
+                } catch {
+                    print("Snapshot: auto-start after launch failed to list targets: \(error)")
+                }
+                let stillNotRunning = await MainActor.run { !self.captureEngine.isRunning }
+                if stillNotRunning, attempt < 3 {
+                    self.attemptAutoStartAfterLaunch(attempt: attempt + 1)
+                }
+            }
+        }
+    }
+
+    @objc private func runningAppDidTerminate(_ notification: Notification) {
+        guard captureEngine.isRunning,
+              case .app(let recordingApp)? = currentTarget,
+              let terminated = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              terminated.bundleIdentifier == recordingApp.bundleIdentifier else { return }
+        Task {
+            await captureEngine.stop()
+            await MainActor.run { statusBar.setRecording(false, targetName: nil) }
+        }
     }
 
     private var fullClipLengthSeconds: Double {
