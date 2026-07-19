@@ -119,10 +119,11 @@ Everything's in `Sources/Snapshot/Settings.swift`:
   bitrate scales with actual capture resolution rather than a flat number,
   since a fixed bitrate that looks fine at 1080p looks noticeably blocky at
   higher resolutions (e.g. a Retina display's window can easily be 3000px+
-  wide). Defaults to 0.28 bits/pixel/frame (set relative to HEVC, which is
+  wide). Defaults to 0.45 bits/pixel/frame (set relative to HEVC, which is
   meaningfully more efficient than H.264 at the same visual quality),
-  clamped to 6–100 Mbps; raise it if quality still isn't good enough, at the
-  cost of larger clip files.
+  clamped to 6–150 Mbps; raise it if quality still isn't good enough, at the
+  cost of larger clip files and (bounded) more RAM for the buffer, since it
+  holds encoded frames sized by this rate.
 - `frameRate` — 60fps by default. Frame-timing diagnostics (see below) showed
   the capture pipeline holding steady at ~30fps with essentially zero
   dropped/delayed frames, so there was headroom to raise it to match typical
