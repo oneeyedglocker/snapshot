@@ -16,7 +16,7 @@ struct PersistedTarget: Codable {
 enum Settings {
     private static let defaults = UserDefaults.standard
 
-    static let availableClipLengths: [Int] = [15, 30, 60]
+    static let availableClipLengths: [Int] = [10, 15, 30, 60]
 
     private static let exportSecondsKey = "exportSeconds"
 
@@ -25,7 +25,7 @@ enum Settings {
     static var exportSeconds: Double {
         get {
             let stored = defaults.integer(forKey: exportSecondsKey)
-            return availableClipLengths.contains(stored) ? Double(stored) : 30
+            return availableClipLengths.contains(stored) ? Double(stored) : 10
         }
         set { defaults.set(Int(newValue), forKey: exportSecondsKey) }
     }

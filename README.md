@@ -1,7 +1,7 @@
 # Snapshot
 
 A tiny menu-bar app for macOS that does one thing: hold a rolling buffer of
-your gameplay (15/30/60s, your choice) and, on a hotkey, save it as an mp4.
+your gameplay (10/15/30/60s, your choice) and, on a hotkey, save it as an mp4.
 No OBS, no scenes, no config sprawl — an instant-replay button.
 
 ## How it works
@@ -18,7 +18,7 @@ No OBS, no scenes, no config sprawl — an instant-replay button.
 - Audio (system audio only, no mic) is buffered as raw PCM and AAC-encoded
   at save time.
 - Two hotkeys, both editable from **Preferences** (no rebuild needed):
-  **⌘⇧R** saves the last N seconds (15/30/60, set via the **Clip Length**
+  **⌘⇧R** saves the last N seconds (10/15/30/60, set via the **Clip Length**
   menu), **⌘⇧F** always saves the longest available length regardless of
   what N is currently set to — a "that was too good, grab everything" key.
   Both save to `~/Movies/Snapshot Clips/`.
@@ -93,8 +93,8 @@ Click the menu bar icon (● record icon):
   auto-starts the moment that app launches (even if Snapshot was already
   running and idle), and auto-stops when it quits — so with WoW set as the
   target, just launching WoW is enough; no need to touch Snapshot at all.
-- **Clip Length** — 15s / 30s / 60s. Takes effect immediately, even mid-recording
-  (no need to stop/restart). Persisted across launches.
+- **Clip Length** — 10s / 15s / 30s / 60s. Takes effect immediately, even
+  mid-recording (no need to stop/restart). Persisted across launches.
 - **Start/Stop Recording** — begins/ends the rolling buffer.
 - **Save Last Ns Now** / **Save Full Length Now** — same as the two hotkeys,
   useful without a keyboard. Menu labels always show the currently-bound combo.
@@ -108,9 +108,9 @@ Click the menu bar icon (● record icon):
 Everything's in `Sources/Snapshot/Settings.swift`:
 
 - `exportSeconds` — default clip length; user-adjustable at runtime via the
-  Clip Length menu (backed by UserDefaults), defaults to 30s.
+  Clip Length menu (backed by UserDefaults), defaults to 10s.
 - `availableClipLengths` — the options offered in that menu (default
-  `[15, 30, 60]`); add/remove values here.
+  `[10, 15, 30, 60]`); add/remove values here.
 - `bufferSeconds` — always sized to `availableClipLengths.max() + 10`, i.e.
   the RAM window covers the longest possible clip regardless of which
   default is currently selected, so the full-length hotkey never comes up
