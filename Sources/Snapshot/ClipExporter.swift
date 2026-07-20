@@ -39,11 +39,13 @@ enum ClipExporter {
             return
         }
         let trimmedAudio = audio.filter { $0.presentationTime >= clipStart }
+        let audioFirstSeconds: String = audio.first.map { String(CMTimeGetSeconds($0.presentationTime)) } ?? "n/a"
+        let audioLastSeconds: String = audio.last.map { String(CMTimeGetSeconds($0.presentationTime)) } ?? "n/a"
+        let clipStartSeconds = CMTimeGetSeconds(clipStart)
         NSLog(
             "%@",
-            "Snapshot: export audio: \(audio.count) buffered total (first=\(audio.first.map { CMTimeGetSeconds($0.presentationTime) }.map(String.init) ?? "n/a"), "
-            + "last=\(audio.last.map { CMTimeGetSeconds($0.presentationTime) }.map(String.init) ?? "n/a")), clipStart=\(CMTimeGetSeconds(clipStart)), "
-            + "trimmedAudio=\(trimmedAudio.count)"
+            "Snapshot: export audio: \(audio.count) buffered total (first=\(audioFirstSeconds), last=\(audioLastSeconds)), "
+            + "clipStart=\(clipStartSeconds), trimmedAudio=\(trimmedAudio.count)"
         )
 
         do {
