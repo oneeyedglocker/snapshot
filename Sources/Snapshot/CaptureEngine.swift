@@ -331,29 +331,56 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             NSLog("%@", "Snapshot: could not read audio format description")
         }
 
-        var audioBufferList = AudioBufferList()
+        // Non-interleaved stereo delivers one AudioBuffer per channel, so a
+        // default single-buffer AudioBufferList is too small (that was the
+        // -12737 kCMSampleBufferError_ArrayTooSmall we saw). Ask for the
+        // needed size first, then allocate a list that can hold every buffer.
+        var neededSize = 0
+        let sizeStatus = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: &neededSize,
+            bufferListOut: nil,
+            bufferListSize: 0,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: 0,
+            blockBufferOut: nil
+        )
+        guard sizeStatus == noErr, neededSize > 0 else {
+            NSLog("%@", "Snapshot: could not size audio buffer list, status=\(sizeStatus)")
+            return
+        }
+        let ablPointer = UnsafeMutableRawPointer.allocate(byteCount: neededSize, alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { ablPointer.deallocate() }
+        let audioBufferListPtr = ablPointer.assumingMemoryBound(to: AudioBufferList.self)
         var blockBuffer: CMBlockBuffer?
         let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
             sampleBuffer,
             bufferListSizeNeededOut: nil,
-            bufferListOut: &audioBufferList,
-            bufferListSize: MemoryLayout<AudioBufferList>.size,
+            bufferListOut: audioBufferListPtr,
+            bufferListSize: neededSize,
             blockBufferAllocator: nil,
             blockBufferMemoryAllocator: nil,
             flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
             blockBufferOut: &blockBuffer
         )
-        guard status == noErr, let mData = audioBufferList.mBuffers.mData else {
+        guard status == noErr else {
             NSLog("%@", "Snapshot: could not read audio buffer data, status=\(status)")
             return
         }
-        let sampleCount = Int(audioBufferList.mBuffers.mDataByteSize) / MemoryLayout<Float32>.size
-        let samples = mData.assumingMemoryBound(to: Float32.self)
+        let buffers = UnsafeMutableAudioBufferListPointer(audioBufferListPtr)
         var peak: Float32 = 0
-        for i in 0..<sampleCount {
-            peak = max(peak, abs(samples[i]))
+        var totalSamples = 0
+        for buffer in buffers {
+            guard let mData = buffer.mData else { continue }
+            let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float32>.size
+            totalSamples += sampleCount
+            let samples = mData.assumingMemoryBound(to: Float32.self)
+            for i in 0..<sampleCount {
+                peak = max(peak, abs(samples[i]))
+            }
         }
-        NSLog("%@", "Snapshot: first audio buffer: \(sampleCount) float samples in buffer 0, peak amplitude=\(peak)")
+        NSLog("%@", "Snapshot: first audio buffer: \(buffers.count) channel buffer(s), \(totalSamples) float samples total, peak amplitude=\(peak)")
     }
 
     // MARK: - SCStreamDelegate
