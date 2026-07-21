@@ -67,7 +67,15 @@ enum ClipExporter {
                     AVNumberOfChannelsKey: Settings.audioChannels,
                     AVEncoderBitRateKey: 128_000
                 ]
-                let input = AVAssetWriterInput(mediaType: .audio, outputSettings: settings)
+                // Explicit sourceFormatHint (mirroring the video input above)
+                // tells the writer exactly what PCM format is incoming
+                // instead of inferring it purely from the first sample —
+                // without this, a source/target format mismatch (e.g.
+                // non-interleaved vs. interleaved float32, a common CoreAudio
+                // distinction) can silently produce an empty/garbage track
+                // rather than a hard error.
+                let audioFormatHint = trimmedAudio.first?.sampleBuffer.formatDescription
+                let input = AVAssetWriterInput(mediaType: .audio, outputSettings: settings, sourceFormatHint: audioFormatHint)
                 input.expectsMediaDataInRealTime = false
                 if writer.canAdd(input) {
                     writer.add(input)

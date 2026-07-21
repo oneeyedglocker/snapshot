@@ -1,4 +1,5 @@
 import AppKit
+import AudioToolbox
 import CoreMedia
 import CoreVideo
 import Foundation
@@ -192,7 +193,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             logFrameTiming(sampleBuffer.presentationTimeStamp)
             videoEncoder?.encode(sampleBuffer)
         case .audio:
-            logAudioTiming(sampleBuffer.presentationTimeStamp)
+            logAudioTiming(sampleBuffer)
             let sample = TimedSample(sampleBuffer: sampleBuffer, isKeyframe: true)
             Task { [audioBuffer] in await audioBuffer.append(sample) }
         case .microphone:
@@ -244,10 +245,12 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     /// arrive but get dropped later (buffer pruning, export-time filtering
     /// by a mismatched clock). This narrows it to the SCStream boundary.
     /// Only ever called from audioQueue.
-    private func logAudioTiming(_ pts: CMTime) {
+    private func logAudioTiming(_ sampleBuffer: CMSampleBuffer) {
+        let pts = sampleBuffer.presentationTimeStamp
         if !hasLoggedFirstAudioSample {
             hasLoggedFirstAudioSample = true
             NSLog("%@", "Snapshot: first audio sample received, pts=\(CMTimeGetSeconds(pts))s")
+            logAudioFormatAndContent(sampleBuffer)
         }
         audioSamplesSinceLog += 1
 
@@ -261,6 +264,53 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             audioSamplesSinceLog = 0
             lastAudioLogTime = now
         }
+    }
+
+    /// One-time (per session) inspection of the actual audio format and
+    /// whether the source buffer contains real signal or silence — the
+    /// sample-count/timing diagnostics above only prove buffers arrive on
+    /// schedule, not that they carry audible content. If this shows real
+    /// non-zero signal but clips still play silent, the bug is downstream
+    /// (export/encode); if peak is ~0 here, ScreenCaptureKit itself isn't
+    /// capturing real audio for this target.
+    private func logAudioFormatAndContent(_ sampleBuffer: CMSampleBuffer) {
+        if let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
+           let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription) {
+            let isNonInterleaved = asbd.pointee.mFormatFlags & kAudioFormatFlagIsNonInterleaved != 0
+            let isFloat = asbd.pointee.mFormatFlags & kAudioFormatFlagIsFloat != 0
+            NSLog(
+                "%@",
+                "Snapshot: audio format: sampleRate=\(asbd.pointee.mSampleRate) channels=\(asbd.pointee.mChannelsPerFrame) "
+                + "bitsPerChannel=\(asbd.pointee.mBitsPerChannel) isFloat=\(isFloat) isNonInterleaved=\(isNonInterleaved) "
+                + "bytesPerFrame=\(asbd.pointee.mBytesPerFrame) formatFlags=\(asbd.pointee.mFormatFlags)"
+            )
+        } else {
+            NSLog("%@", "Snapshot: could not read audio format description")
+        }
+
+        var audioBufferList = AudioBufferList()
+        var blockBuffer: CMBlockBuffer?
+        let status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            bufferListSizeNeededOut: nil,
+            bufferListOut: &audioBufferList,
+            bufferListSize: MemoryLayout<AudioBufferList>.size,
+            blockBufferAllocator: nil,
+            blockBufferMemoryAllocator: nil,
+            flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            blockBufferOut: &blockBuffer
+        )
+        guard status == noErr, let mData = audioBufferList.mBuffers.mData else {
+            NSLog("%@", "Snapshot: could not read audio buffer data, status=\(status)")
+            return
+        }
+        let sampleCount = Int(audioBufferList.mBuffers.mDataByteSize) / MemoryLayout<Float32>.size
+        let samples = mData.assumingMemoryBound(to: Float32.self)
+        var peak: Float32 = 0
+        for i in 0..<sampleCount {
+            peak = max(peak, abs(samples[i]))
+        }
+        NSLog("%@", "Snapshot: first audio buffer: \(sampleCount) float samples in buffer 0, peak amplitude=\(peak)")
     }
 
     // MARK: - SCStreamDelegate
