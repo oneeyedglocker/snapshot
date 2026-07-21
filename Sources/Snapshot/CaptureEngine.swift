@@ -62,6 +62,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     private var audioSamplesSinceLog = 0
     private var lastAudioLogTime = Date()
     private var hasLoggedFirstAudioSample = false
+    private var peakAmplitudeSinceLog: Float32 = 0
 
     var onStreamStopped: ((Error?) -> Void)?
 
@@ -187,6 +188,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             audioSamplesSinceLog = 0
             lastAudioLogTime = Date()
             hasLoggedFirstAudioSample = false
+            peakAmplitudeSinceLog = 0
         }
 
         let newStream = SCStream(filter: filter, configuration: config, delegate: self)
@@ -296,15 +298,24 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             logAudioFormatAndContent(sampleBuffer)
         }
         audioSamplesSinceLog += 1
+        if let peak = peakAmplitude(of: sampleBuffer) {
+            peakAmplitudeSinceLog = max(peakAmplitudeSinceLog, peak)
+        }
 
         let now = Date()
         let elapsed = now.timeIntervalSince(lastAudioLogTime)
         if elapsed >= 5 {
+            // The continuous peak (vs. the one-shot first-buffer check) is
+            // what actually distinguishes "silent only at startup" from
+            // "always silent" — a first buffer of zeros is a normal
+            // audio-session warmup artifact, so we can't conclude from it
+            // alone whether the source genuinely carries no signal.
             NSLog(
                 "%@",
-                String(format: "Snapshot: audio samples in last %.1fs: %d", elapsed, audioSamplesSinceLog)
+                String(format: "Snapshot: audio samples in last %.1fs: %d, peak amplitude this window: %f", elapsed, audioSamplesSinceLog, peakAmplitudeSinceLog)
             )
             audioSamplesSinceLog = 0
+            peakAmplitudeSinceLog = 0
             lastAudioLogTime = now
         }
     }
@@ -330,11 +341,14 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         } else {
             NSLog("%@", "Snapshot: could not read audio format description")
         }
+    }
 
-        // Non-interleaved stereo delivers one AudioBuffer per channel, so a
-        // default single-buffer AudioBufferList is too small (that was the
-        // -12737 kCMSampleBufferError_ArrayTooSmall we saw). Ask for the
-        // needed size first, then allocate a list that can hold every buffer.
+    /// Returns the peak absolute float sample across all channel buffers of
+    /// one audio sample buffer, or nil if the data can't be read. Non-
+    /// interleaved stereo delivers one AudioBuffer per channel, so a default
+    /// single-buffer AudioBufferList is too small (that was the -12737
+    /// kCMSampleBufferError_ArrayTooSmall seen earlier) — size it dynamically.
+    private func peakAmplitude(of sampleBuffer: CMSampleBuffer) -> Float32? {
         var neededSize = 0
         let sizeStatus = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
             sampleBuffer,
@@ -346,10 +360,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             flags: 0,
             blockBufferOut: nil
         )
-        guard sizeStatus == noErr, neededSize > 0 else {
-            NSLog("%@", "Snapshot: could not size audio buffer list, status=\(sizeStatus)")
-            return
-        }
+        guard sizeStatus == noErr, neededSize > 0 else { return nil }
         let ablPointer = UnsafeMutableRawPointer.allocate(byteCount: neededSize, alignment: MemoryLayout<AudioBufferList>.alignment)
         defer { ablPointer.deallocate() }
         let audioBufferListPtr = ablPointer.assumingMemoryBound(to: AudioBufferList.self)
@@ -364,23 +375,18 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
             blockBufferOut: &blockBuffer
         )
-        guard status == noErr else {
-            NSLog("%@", "Snapshot: could not read audio buffer data, status=\(status)")
-            return
-        }
+        guard status == noErr else { return nil }
         let buffers = UnsafeMutableAudioBufferListPointer(audioBufferListPtr)
         var peak: Float32 = 0
-        var totalSamples = 0
         for buffer in buffers {
             guard let mData = buffer.mData else { continue }
             let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float32>.size
-            totalSamples += sampleCount
             let samples = mData.assumingMemoryBound(to: Float32.self)
             for i in 0..<sampleCount {
                 peak = max(peak, abs(samples[i]))
             }
         }
-        NSLog("%@", "Snapshot: first audio buffer: \(buffers.count) channel buffer(s), \(totalSamples) float samples total, peak amplitude=\(peak)")
+        return peak
     }
 
     // MARK: - SCStreamDelegate
