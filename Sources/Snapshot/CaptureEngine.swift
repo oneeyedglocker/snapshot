@@ -58,11 +58,14 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     private var configuredPixelWidth = 0
     private var configuredPixelHeight = 0
 
-    // Audio diagnostics, only ever touched from audioQueue.
-    private var audioSamplesSinceLog = 0
-    private var lastAudioLogTime = Date()
+    // Audio diagnostics. hasLoggedFirstAudioSample is only touched from
+    // audioQueue. The two counters below are written from audioQueue and
+    // read/reset from videoQueue's 5s timer (so an audio heartbeat prints
+    // even after audio delivery stops), so they're guarded by a lock.
     private var hasLoggedFirstAudioSample = false
-    private var peakAmplitudeSinceLog: Float32 = 0
+    private let audioStatsLock = NSLock()
+    private var audioSamplesSinceVideoLog = 0
+    private var audioPeakSinceVideoLog: Float32 = 0
 
     var onStreamStopped: ((Error?) -> Void)?
 
@@ -185,11 +188,12 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             configuredPixelHeight = config.height
         }
         audioQueue.sync {
-            audioSamplesSinceLog = 0
-            lastAudioLogTime = Date()
             hasLoggedFirstAudioSample = false
-            peakAmplitudeSinceLog = 0
         }
+        audioStatsLock.lock()
+        audioSamplesSinceVideoLog = 0
+        audioPeakSinceVideoLog = 0
+        audioStatsLock.unlock()
 
         let newStream = SCStream(filter: filter, configuration: config, delegate: self)
         try newStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: videoQueue)
@@ -249,11 +253,22 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         let now = Date()
         let elapsed = now.timeIntervalSince(lastFrameLogTime)
         if elapsed >= 5 {
+            // Read+reset the audio counters here (not on audioQueue) so an
+            // audio heartbeat still prints every 5s even after audio delivery
+            // has stopped entirely — the whole point is to see WHEN it stops.
+            audioStatsLock.lock()
+            let audioCount = audioSamplesSinceVideoLog
+            let audioPeak = audioPeakSinceVideoLog
+            audioSamplesSinceVideoLog = 0
+            audioPeakSinceVideoLog = 0
+            audioStatsLock.unlock()
+
             NSLog(
                 "%@",
                 String(
-                    format: "Snapshot: video frames in last %.1fs: %d (%.1f fps), gaps>1.5x expected interval: %d, worst gap: %.0fms",
-                    elapsed, framesSinceLog, Double(framesSinceLog) / elapsed, gappyFramesSinceLog, worstGapSinceLog * 1000
+                    format: "Snapshot: video frames in last %.1fs: %d (%.1f fps), gaps>1.5x: %d, worst gap: %.0fms | audio samples: %d, peak: %f",
+                    elapsed, framesSinceLog, Double(framesSinceLog) / elapsed, gappyFramesSinceLog, worstGapSinceLog * 1000,
+                    audioCount, audioPeak
                 )
             )
             framesSinceLog = 0
@@ -282,42 +297,23 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         )
     }
 
-    /// Diagnoses whether SCStream is delivering *any* audio at all — user
-    /// reports of silent clips could mean either (a) ScreenCaptureKit never
-    /// hands us audio samples in the first place (e.g. a limitation of
-    /// window-scoped SCContentFilter vs. display-scoped filters, or the
-    /// app/game genuinely has no active audio session), or (b) samples do
-    /// arrive but get dropped later (buffer pruning, export-time filtering
-    /// by a mismatched clock). This narrows it to the SCStream boundary.
-    /// Only ever called from audioQueue.
+    /// Records that an audio sample arrived and its peak amplitude, into
+    /// lock-guarded counters that the video 5s timer drains and logs. The
+    /// key question is WHEN audio delivery stops (the earlier run showed only
+    /// ~1.2s of audio in a 21s recording), and reporting from the reliably-
+    /// firing video timer — rather than here, which stops being called the
+    /// moment audio stops — is what makes that visible. Called from audioQueue.
     private func logAudioTiming(_ sampleBuffer: CMSampleBuffer) {
-        let pts = sampleBuffer.presentationTimeStamp
         if !hasLoggedFirstAudioSample {
             hasLoggedFirstAudioSample = true
-            NSLog("%@", "Snapshot: first audio sample received, pts=\(CMTimeGetSeconds(pts))s")
+            NSLog("%@", "Snapshot: first audio sample received, pts=\(CMTimeGetSeconds(sampleBuffer.presentationTimeStamp))s")
             logAudioFormatAndContent(sampleBuffer)
         }
-        audioSamplesSinceLog += 1
-        if let peak = peakAmplitude(of: sampleBuffer) {
-            peakAmplitudeSinceLog = max(peakAmplitudeSinceLog, peak)
-        }
-
-        let now = Date()
-        let elapsed = now.timeIntervalSince(lastAudioLogTime)
-        if elapsed >= 5 {
-            // The continuous peak (vs. the one-shot first-buffer check) is
-            // what actually distinguishes "silent only at startup" from
-            // "always silent" — a first buffer of zeros is a normal
-            // audio-session warmup artifact, so we can't conclude from it
-            // alone whether the source genuinely carries no signal.
-            NSLog(
-                "%@",
-                String(format: "Snapshot: audio samples in last %.1fs: %d, peak amplitude this window: %f", elapsed, audioSamplesSinceLog, peakAmplitudeSinceLog)
-            )
-            audioSamplesSinceLog = 0
-            peakAmplitudeSinceLog = 0
-            lastAudioLogTime = now
-        }
+        let peak = peakAmplitude(of: sampleBuffer) ?? 0
+        audioStatsLock.lock()
+        audioSamplesSinceVideoLog += 1
+        audioPeakSinceVideoLog = max(audioPeakSinceVideoLog, peak)
+        audioStatsLock.unlock()
     }
 
     /// One-time (per session) inspection of the actual audio format and
