@@ -161,3 +161,11 @@ dropping frames," which have opposite fixes.
   identity shifts on every rebuild, forcing repeat permission prompts (and
   leaving stale "granted" entries in System Settings for old builds). See
   "Making permissions stick across rebuilds" above.
+- Capture resolution comes from `SCContentFilter.pointPixelScale`/`contentRect`
+  (macOS 14+), the actual physical pixel dimensions of what's being captured.
+  On a display running a scaled (non-native) resolution mode, this means the
+  output dimensions won't be a "clean" number like 3840×2160 — capture is
+  still genuinely sharper than a naive points×2 guess, just non-round. A
+  macOS 13 fallback (`NSScreen.main`'s backing scale factor) is used if
+  `pointPixelScale` isn't available, which is less accurate on non-main-screen
+  or scaled-display captures.

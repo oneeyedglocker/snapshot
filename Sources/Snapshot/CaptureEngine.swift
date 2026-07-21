@@ -54,6 +54,9 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     private var gappyFramesSinceLog = 0
     private var worstGapSinceLog: Double = 0
     private var lastFrameLogTime = Date()
+    private var hasLoggedFirstVideoFrameSize = false
+    private var configuredPixelWidth = 0
+    private var configuredPixelHeight = 0
 
     // Audio diagnostics, only ever touched from audioQueue.
     private var audioSamplesSinceLog = 0
@@ -105,9 +108,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         // app windows (their own Space) still resolve correctly.
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         let filter: SCContentFilter
-        let pixelWidth: Int
-        let pixelHeight: Int
-        let scale: CGFloat = NSScreen.main?.backingScaleFactor ?? 2
+        let contentSizePoints: CGSize
 
         switch target {
         case .app(let app):
@@ -120,13 +121,32 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
                 )
             }
             filter = SCContentFilter(desktopIndependentWindow: window)
-            pixelWidth = Int((window.frame.width * scale).rounded())
-            pixelHeight = Int((window.frame.height * scale).rounded())
+            contentSizePoints = window.frame.size
         case .display(let display):
             filter = SCContentFilter(display: display, excludingWindows: [])
-            pixelWidth = Int(CGFloat(display.width) * scale)
-            pixelHeight = Int(CGFloat(display.height) * scale)
+            contentSizePoints = CGSize(width: display.width, height: display.height)
         }
+
+        // Physical pixel dimensions. NSScreen.main's backing scale factor was
+        // wrong here whenever the captured content wasn't on the main screen,
+        // or the display was in a scaled (non-native) resolution mode — it
+        // was producing captures well below the display's real pixel
+        // resolution (e.g. 1706x986 instead of ~3412x1972 on a scaled Retina
+        // display). SCContentFilter's own pointPixelScale (macOS 14+) is the
+        // correct source of truth since it reflects the actual capture, not
+        // a guess based on whichever screen AppKit considers "main."
+        let pixelWidth: Int
+        let pixelHeight: Int
+        if #available(macOS 14.0, *) {
+            let pixelScale = CGFloat(filter.pointPixelScale)
+            pixelWidth = Int((filter.contentRect.width * pixelScale).rounded())
+            pixelHeight = Int((filter.contentRect.height * pixelScale).rounded())
+        } else {
+            let scale: CGFloat = NSScreen.main?.backingScaleFactor ?? 2
+            pixelWidth = Int((contentSizePoints.width * scale).rounded())
+            pixelHeight = Int((contentSizePoints.height * scale).rounded())
+        }
+        NSLog("%@", "Snapshot: capture resolution: \(pixelWidth)x\(pixelHeight) pixels (content \(contentSizePoints.width)x\(contentSizePoints.height) points)")
 
         let config = SCStreamConfiguration()
         config.width = max(pixelWidth, 2)
@@ -159,6 +179,9 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             gappyFramesSinceLog = 0
             worstGapSinceLog = 0
             lastFrameLogTime = Date()
+            hasLoggedFirstVideoFrameSize = false
+            configuredPixelWidth = config.width
+            configuredPixelHeight = config.height
         }
         audioQueue.sync {
             audioSamplesSinceLog = 0
@@ -191,6 +214,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         switch type {
         case .screen:
             logFrameTiming(sampleBuffer.presentationTimeStamp)
+            logVideoFrameSizeIfNeeded(sampleBuffer)
             videoEncoder?.encode(sampleBuffer)
         case .audio:
             logAudioTiming(sampleBuffer)
@@ -235,6 +259,25 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             worstGapSinceLog = 0
             lastFrameLogTime = now
         }
+    }
+
+    /// One-time (per session) check that the encoder's configured dimensions
+    /// (set from SCStreamConfiguration.width/height at start()) actually
+    /// match what ScreenCaptureKit is really delivering. VTCompressionSession
+    /// is created once with fixed dimensions and silently rescales/crops any
+    /// incoming CVPixelBuffer that doesn't match — so a mismatch here would
+    /// silently undo the resolution fix rather than produce an obvious error.
+    private func logVideoFrameSizeIfNeeded(_ sampleBuffer: CMSampleBuffer) {
+        guard !hasLoggedFirstVideoFrameSize, let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        hasLoggedFirstVideoFrameSize = true
+        let actualWidth = CVPixelBufferGetWidth(imageBuffer)
+        let actualHeight = CVPixelBufferGetHeight(imageBuffer)
+        let matches = actualWidth == configuredPixelWidth && actualHeight == configuredPixelHeight
+        NSLog(
+            "%@",
+            "Snapshot: first video frame: actual pixel buffer \(actualWidth)x\(actualHeight), encoder configured for "
+            + "\(configuredPixelWidth)x\(configuredPixelHeight)" + (matches ? " (match)" : " (MISMATCH — VideoToolbox will silently rescale)")
+        )
     }
 
     /// Diagnoses whether SCStream is delivering *any* audio at all — user
