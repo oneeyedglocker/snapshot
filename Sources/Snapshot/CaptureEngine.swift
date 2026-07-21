@@ -224,7 +224,16 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             videoEncoder?.encode(sampleBuffer)
         case .audio:
             logAudioTiming(sampleBuffer)
-            let sample = TimedSample(sampleBuffer: sampleBuffer, isKeyframe: true)
+            // Deep-copy into memory we own, synchronously, so SCStream's
+            // original buffer is released the moment this callback returns.
+            // Retaining SCStream's raw audio buffers in the ring buffer for
+            // up to bufferSeconds exhausts its small internal audio pool and
+            // permanently stalls audio delivery after ~1s (confirmed: video,
+            // which never holds raw buffers because it re-encodes, never
+            // stalls; audio, which did, always stalled). This gives audio the
+            // same "own it immediately, release theirs" model as video.
+            guard let ownedBuffer = Self.deepCopyAudioSampleBuffer(sampleBuffer) else { break }
+            let sample = TimedSample(sampleBuffer: ownedBuffer, isKeyframe: true)
             Task { [audioBuffer] in await audioBuffer.append(sample) }
         case .microphone:
             break // we don't request microphone capture (see SCStreamConfiguration.capturesMicrophone, unused)
@@ -314,6 +323,61 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         audioSamplesSinceVideoLog += 1
         audioPeakSinceVideoLog = max(audioPeakSinceVideoLog, peak)
         audioStatsLock.unlock()
+    }
+
+    /// Produces a fully independent copy of an audio sample buffer — its PCM
+    /// data lives in freshly malloc'd memory owned by the returned buffer, so
+    /// the source (an SCStream-owned buffer from a small recycled pool) can be
+    /// released immediately. Reconstructs with the same format description,
+    /// timing, and sample count so the non-interleaved layout is preserved.
+    private static func deepCopyAudioSampleBuffer(_ src: CMSampleBuffer) -> CMSampleBuffer? {
+        guard let formatDesc = CMSampleBufferGetFormatDescription(src),
+              let srcBlock = CMSampleBufferGetDataBuffer(src) else { return nil }
+        let length = CMBlockBufferGetDataLength(srcBlock)
+        guard length > 0 else { return nil }
+        let numSamples = CMSampleBufferGetNumSamples(src)
+        guard numSamples > 0 else { return nil }
+
+        var timing = CMSampleTimingInfo()
+        guard CMSampleBufferGetSampleTimingInfo(src, at: 0, timingInfoOut: &timing) == noErr else { return nil }
+
+        guard let memory = malloc(length) else { return nil }
+        guard CMBlockBufferCopyDataBytes(srcBlock, atOffset: 0, dataLength: length, destination: memory) == noErr else {
+            free(memory)
+            return nil
+        }
+
+        var newBlock: CMBlockBuffer?
+        let blockStatus = CMBlockBufferCreateWithMemoryBlock(
+            allocator: kCFAllocatorDefault,
+            memoryBlock: memory,
+            blockLength: length,
+            blockAllocator: kCFAllocatorMalloc, // takes ownership; frees `memory` when released
+            customBlockSource: nil,
+            offsetToData: 0,
+            dataLength: length,
+            flags: 0,
+            blockBufferOut: &newBlock
+        )
+        guard blockStatus == kCMBlockBufferNoErr, let newBlock else {
+            free(memory)
+            return nil
+        }
+
+        var newSample: CMSampleBuffer?
+        let status = CMSampleBufferCreateReady(
+            allocator: kCFAllocatorDefault,
+            dataBuffer: newBlock,
+            formatDescription: formatDesc,
+            sampleCount: numSamples,
+            sampleTimingEntryCount: 1,
+            sampleTimingArray: &timing,
+            sampleSizeEntryCount: 0,
+            sampleSizeArray: nil,
+            sampleBufferOut: &newSample
+        )
+        guard status == noErr else { return nil }
+        return newSample
     }
 
     /// One-time (per session) inspection of the actual audio format and
