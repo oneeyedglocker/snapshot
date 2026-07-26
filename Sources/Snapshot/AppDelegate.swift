@@ -43,9 +43,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureEngine.onStreamStopped = { [weak self] error in
             DispatchQueue.main.async {
                 self?.statusBar.setRecording(false, targetName: nil)
-                if let error {
-                    NSLog("%@", "Snapshot: capture stopped with error: \(error)")
-                }
+                guard let error else { return }
+                // This callback only ever fires from SCStreamDelegate, i.e.
+                // ScreenCaptureKit killed the stream on its own — observed as
+                // "Failed to find any displays or windows to capture"
+                // (-3815), likely from WoW briefly recreating its window
+                // (zone loads, alt-tab). Without auto-recovery, recording
+                // stays silently dead until the app is manually relaunched,
+                // and the hotkey does nothing with zero feedback in the
+                // meantime — exactly the "I hit my mouse and nothing
+                // happens" symptom.
+                NSLog("%@", "Snapshot: capture stopped unexpectedly: \(error)")
+                self?.overlay.show(text: "Recording interrupted \u{2014} reconnecting\u{2026}", systemSymbolName: "arrow.triangle.2.circlepath", tintColor: .systemYellow)
+                self?.attemptRestartAfterUnexpectedStop(attempt: 1)
             }
         }
 
@@ -113,6 +123,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let stillNotRunning = await MainActor.run { !self.captureEngine.isRunning }
                 if stillNotRunning, attempt < 3 {
                     self.attemptAutoStartAfterLaunch(attempt: attempt + 1)
+                }
+            }
+        }
+    }
+
+    /// Recovers from ScreenCaptureKit unexpectedly killing the stream (see
+    /// onStreamStopped above) by retrying with the same target rather than
+    /// leaving recording dead until a manual app relaunch.
+    private func attemptRestartAfterUnexpectedStop(attempt: Int) {
+        guard let currentTarget else { return }
+        let delay: TimeInterval = attempt == 1 ? 2 : 5
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, !captureEngine.isRunning else { return }
+            Task {
+                do {
+                    try await captureEngine.start(target: currentTarget)
+                    await MainActor.run {
+                        self.statusBar.setRecording(true, targetName: currentTarget.displayName)
+                        self.overlay.show(text: "Recording resumed", systemSymbolName: "checkmark.circle.fill", tintColor: .systemGreen)
+                    }
+                } catch {
+                    NSLog("%@", "Snapshot: restart attempt \(attempt) failed: \(error)")
+                    if attempt < 5 {
+                        self.attemptRestartAfterUnexpectedStop(attempt: attempt + 1)
+                    } else {
+                        await MainActor.run {
+                            self.overlay.show(text: "Recording lost \u{2014} check menu", systemSymbolName: "exclamationmark.triangle.fill", tintColor: .systemRed)
+                        }
+                    }
                 }
             }
         }
@@ -220,7 +259,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func saveClip(lengthSeconds: Double) {
-        guard captureEngine.isRunning else { return }
+        guard captureEngine.isRunning else {
+            // The hotkey should never do nothing with zero feedback — that's
+            // indistinguishable from a dead hotkey and was the whole reason
+            // "recording silently died" was so hard to notice.
+            overlay.show(text: "Not recording", systemSymbolName: "exclamationmark.triangle.fill", tintColor: .systemYellow)
+            return
+        }
         Task {
             let video = await captureEngine.videoBuffer.snapshot()
             let audio = await captureEngine.audioBuffer.snapshot()
