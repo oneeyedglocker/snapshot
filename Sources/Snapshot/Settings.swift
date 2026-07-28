@@ -63,6 +63,13 @@ enum Settings {
         return min(max(bitrate, 6_000_000), 120_000_000)
     }
 
+    /// Safety net for "Start Recording to Disk" (open-ended, unlike the
+    /// RAM-buffered instant-replay clips) — auto-stops if left running by
+    /// accident. Counted from actual encoded frame/sample sizes as they're
+    /// written (see DiskRecorder), not by polling the file, so the cap is
+    /// enforced the moment it's crossed rather than some seconds later.
+    static let diskRecordingMaxBytes: Int64 = 1_000_000_000
+
     static var outputDirectory: URL = {
         let movies = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
         let dir = movies.appendingPathComponent("Snapshot Clips", isDirectory: true)

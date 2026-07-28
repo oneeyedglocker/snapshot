@@ -59,9 +59,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        captureEngine.onDiskRecordingStopped = { [weak self] url, reason in
+            DispatchQueue.main.async {
+                self?.statusBar.setRecordingToDisk(false)
+                switch reason {
+                case .manual:
+                    NSLog("%@", "Snapshot: disk recording saved to \(url.path)")
+                    self?.overlay.show(text: "Disk recording saved", systemSymbolName: "checkmark.circle.fill", tintColor: .systemGreen)
+                case .sizeLimitReached:
+                    NSLog("%@", "Snapshot: disk recording hit the 1GB limit, saved to \(url.path)")
+                    self?.overlay.show(text: "Disk recording stopped \u{2014} 1GB limit reached", systemSymbolName: "exclamationmark.triangle.fill", tintColor: .systemYellow)
+                case .error(let error):
+                    NSLog("%@", "Snapshot: disk recording stopped with error: \(error)")
+                    self?.overlay.show(text: "Disk recording stopped", systemSymbolName: "xmark.circle.fill", tintColor: .systemRed)
+                }
+            }
+        }
+
         statusBar.onSelectApp = { [weak self] app in self?.select(target: .app(app)) }
         statusBar.onSelectDisplay = { [weak self] display in self?.select(target: .display(display)) }
         statusBar.onToggleRecording = { [weak self] in self?.toggleRecording() }
+        statusBar.onToggleDiskRecording = { [weak self] in self?.toggleDiskRecording() }
         statusBar.onSaveNow = { [weak self] in self?.saveClip(lengthSeconds: Settings.exportSeconds) }
         statusBar.onSaveFullLengthNow = { [weak self] in self?.saveClip(lengthSeconds: self?.fullClipLengthSeconds ?? Settings.exportSeconds) }
         statusBar.onRefreshTargets = { [weak self] in self?.refreshTargets(autoStart: false) }
@@ -172,6 +190,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Double(Settings.availableClipLengths.max() ?? Int(Settings.exportSeconds))
     }
 
+    /// Without this, quitting mid disk-recording would let the process exit
+    /// before AVAssetWriter's async finishWriting completes, risking a
+    /// truncated/unplayable .mp4 — worth the wait since a disk recording
+    /// can represent many minutes of footage, unlike the near-instant clip
+    /// exports elsewhere in the app.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard captureEngine.isRecordingToDisk else { return .terminateNow }
+        captureEngine.onDiskRecordingStopped = { url, _ in
+            NSLog("%@", "Snapshot: finalized disk recording before quit: \(url.path)")
+            DispatchQueue.main.async { NSApp.reply(toApplicationShouldTerminate: true) }
+        }
+        captureEngine.stopDiskRecording()
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         hotkeyManager.stop()
         Task { await captureEngine.stop() }
@@ -256,6 +289,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    private func toggleDiskRecording() {
+        if captureEngine.isRecordingToDisk {
+            captureEngine.stopDiskRecording()
+            return
+        }
+        guard captureEngine.isRunning else {
+            overlay.show(text: "Not recording", systemSymbolName: "exclamationmark.triangle.fill", tintColor: .systemYellow)
+            return
+        }
+        guard let url = captureEngine.startDiskRecording() else {
+            overlay.show(text: "Couldn't start disk recording", systemSymbolName: "xmark.circle.fill", tintColor: .systemRed)
+            return
+        }
+        NSLog("%@", "Snapshot: started disk recording to \(url.path)")
+        statusBar.setRecordingToDisk(true)
+        overlay.show(text: "Recording to disk started", systemSymbolName: "record.circle.fill", tintColor: .systemRed)
     }
 
     private func saveClip(lengthSeconds: Double) {

@@ -71,6 +71,19 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
 
     private(set) var isRunning = false
 
+    // Optional real-time-to-disk recording, layered on top of the same
+    // running stream — see DiskRecorder. Independent of the RAM ring
+    // buffer used for instant-replay clips.
+    private var diskRecorder: DiskRecorder?
+    var isRecordingToDisk: Bool { diskRecorder != nil }
+    var onDiskRecordingStopped: ((URL, DiskRecordingStopReason) -> Void)?
+
+    private static let diskRecordingFilenameFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        return formatter
+    }()
+
     /// Below this, a window is almost certainly a background/utility panel
     /// rather than something worth offering as a capture target.
     private static let minimumWindowDimension: CGFloat = 150
@@ -166,8 +179,9 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
         guard let encoder = VideoEncoder(
             width: Int32(config.width),
             height: Int32(config.height),
-            onEncodedFrame: { [videoBuffer] sample in
+            onEncodedFrame: { [weak self, videoBuffer] sample in
                 Task { await videoBuffer.append(sample) }
+                self?.diskRecorder?.appendVideo(sample.sampleBuffer)
             }
         ) else {
             throw CaptureError.noContentAvailable
@@ -205,12 +219,37 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     func stop() async {
+        diskRecorder?.stop(reason: .manual)
         guard let stream else { return }
         try? await stream.stopCapture()
         self.stream = nil
         videoEncoder?.invalidate()
         videoEncoder = nil
         isRunning = false
+    }
+
+    /// Starts an open-ended real-time recording straight to disk — the
+    /// "record my whole 10-minute session" case, as opposed to the RAM
+    /// ring buffer's short instant-replay clips. Requires the stream to
+    /// already be running. Auto-stops once Settings.diskRecordingMaxBytes
+    /// has been written, in case it's left running by accident.
+    @discardableResult
+    func startDiskRecording() -> URL? {
+        guard isRunning, diskRecorder == nil else { return nil }
+        let url = Settings.outputDirectory.appendingPathComponent(
+            "Session \(Self.diskRecordingFilenameFormatter.string(from: Date())).mp4"
+        )
+        guard let recorder = DiskRecorder(url: url, maxBytes: Settings.diskRecordingMaxBytes) else { return nil }
+        recorder.onStopped = { [weak self] reason in
+            self?.diskRecorder = nil
+            self?.onDiskRecordingStopped?(url, reason)
+        }
+        diskRecorder = recorder
+        return url
+    }
+
+    func stopDiskRecording() {
+        diskRecorder?.stop(reason: .manual)
     }
 
     // MARK: - SCStreamOutput
@@ -233,6 +272,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
             // stalls; audio, which did, always stalled). This gives audio the
             // same "own it immediately, release theirs" model as video.
             guard let ownedBuffer = Self.deepCopyAudioSampleBuffer(sampleBuffer) else { break }
+            diskRecorder?.appendAudio(ownedBuffer)
             let sample = TimedSample(sampleBuffer: ownedBuffer, isKeyframe: true)
             Task { [audioBuffer] in await audioBuffer.append(sample) }
         case .microphone:
@@ -453,6 +493,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate {
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
         isRunning = false
+        diskRecorder?.stop(reason: .error(error))
         onStreamStopped?(error)
     }
 }

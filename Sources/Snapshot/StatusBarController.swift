@@ -8,12 +8,14 @@ final class StatusBarController: NSObject {
     private var apps: [SCRunningApplication] = []
     private var displays: [SCDisplay] = []
     private var isRecording = false
+    private var isRecordingToDisk = false
     private var currentTargetName: String?
     private var clipLengthSeconds = Int(Settings.exportSeconds)
 
     var onSelectApp: ((SCRunningApplication) -> Void)?
     var onSelectDisplay: ((SCDisplay) -> Void)?
     var onToggleRecording: (() -> Void)?
+    var onToggleDiskRecording: (() -> Void)?
     var onSaveNow: (() -> Void)?
     var onSaveFullLengthNow: (() -> Void)?
     var onRefreshTargets: (() -> Void)?
@@ -48,6 +50,11 @@ final class StatusBarController: NSObject {
         statusItem.menu = buildMenu()
     }
 
+    func setRecordingToDisk(_ recording: Bool) {
+        isRecordingToDisk = recording
+        statusItem.menu = buildMenu()
+    }
+
     /// Call after anything not otherwise tracked here changes (e.g. hotkeys
     /// edited in Preferences), so the menu's display text stays current.
     func refreshMenu() {
@@ -65,11 +72,13 @@ final class StatusBarController: NSObject {
     private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
-        let statusLabel = NSMenuItem(
-            title: isRecording ? "Recording: \(currentTargetName ?? "unknown")" : "Not recording",
-            action: nil,
-            keyEquivalent: ""
-        )
+        let statusLabelText: String
+        if isRecording {
+            statusLabelText = "Recording: \(currentTargetName ?? "unknown")" + (isRecordingToDisk ? " \u{2022} saving to disk" : "")
+        } else {
+            statusLabelText = "Not recording"
+        }
+        let statusLabel = NSMenuItem(title: statusLabelText, action: nil, keyEquivalent: "")
         statusLabel.isEnabled = false
         menu.addItem(statusLabel)
         menu.addItem(.separator())
@@ -145,6 +154,16 @@ final class StatusBarController: NSObject {
         menu.addItem(saveFullItem)
         menu.addItem(.separator())
 
+        let diskItem = NSMenuItem(
+            title: isRecordingToDisk ? "Stop Recording to Disk" : "Start Recording to Disk (up to 1GB)",
+            action: #selector(toggleDiskRecording),
+            keyEquivalent: ""
+        )
+        diskItem.target = self
+        diskItem.isEnabled = isRecording || isRecordingToDisk
+        menu.addItem(diskItem)
+        menu.addItem(.separator())
+
         let folderItem = NSMenuItem(title: "Show Clips Folder", action: #selector(revealOutputFolder), keyEquivalent: "")
         folderItem.target = self
         menu.addItem(folderItem)
@@ -172,6 +191,7 @@ final class StatusBarController: NSObject {
     }
 
     @objc private func toggleRecording() { onToggleRecording?() }
+    @objc private func toggleDiskRecording() { onToggleDiskRecording?() }
     @objc private func saveNow() { onSaveNow?() }
     @objc private func saveFullLengthNow() { onSaveFullLengthNow?() }
     @objc private func refreshTargets() { onRefreshTargets?() }

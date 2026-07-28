@@ -25,6 +25,13 @@ No OBS, no scenes, no config sprawl — an instant-replay button.
 - A brief on-screen toast (top-right corner, click-through, visible over
   fullscreen/windowed games) confirms a save succeeded — the menu bar icon
   flash alone is easy to miss mid-game.
+- For longer, planned sessions (a whole raid, a 10-minute pull) there's also
+  **Start/Stop Recording to Disk** in the menu — no hotkey, no RAM buffering,
+  it writes straight to an .mp4 as it captures, so it costs flat disk I/O
+  regardless of length instead of the RAM the instant-replay buffer would
+  need for the same duration. Capped at 1GB in case you forget to stop it —
+  it auto-stops and finalizes the file once it hits the limit (and also
+  finalizes cleanly if you quit Snapshot while it's running).
 
 ## Build & run
 
@@ -98,6 +105,12 @@ Click the menu bar icon (● record icon):
 - **Start/Stop Recording** — begins/ends the rolling buffer.
 - **Save Last Ns Now** / **Save Full Length Now** — same as the two hotkeys,
   useful without a keyboard. Menu labels always show the currently-bound combo.
+- **Start/Stop Recording to Disk** — a separate, open-ended recording
+  written straight to disk in real time (not the RAM buffer), for when you
+  want the whole session rather than a short clip after the fact. Requires
+  recording to already be on. Stops (and saves what it has) automatically
+  at 1GB if you forget to turn it off; disabled if recording isn't running.
+  Saves as `Session <timestamp>.mp4` alongside your regular clips.
 - **Show Clips Folder** — opens `~/Movies/Snapshot Clips/` in Finder.
 - **Preferences…** — opens a small window to rebind either hotkey: click a
   shortcut, then press the new key combo (needs at least one modifier key;
